@@ -68,12 +68,18 @@ export default function Home() {
         flex: 1,
         display: 'grid',
         gridTemplateColumns: '280px 1fr 320px',
+        gap: 'var(--space-lg)',
         height: 'calc(100vh - 60px)',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        padding: 'var(--space-lg)',
+        paddingTop: 'var(--space-md)',
+        background: 'var(--surface-color)'
       }}>
         {/* Left Column - Environment & Config */}
         <div className="col" style={{
-          borderRight: '1px solid var(--border-color)',
+          background: 'var(--bg-color)',
+          border: '1px solid var(--border-color)',
+          borderRadius: 'var(--radius-md)',
           display: 'flex',
           flexDirection: 'column',
           overflowY: 'auto'
@@ -166,8 +172,9 @@ export default function Home() {
 
         {/* Center Column - Live Feed */}
         <div className="col" style={{
-          background: 'var(--surface-color)',
-          borderRight: '1px solid var(--border-color)',
+          background: 'var(--bg-color)',
+          border: '1px solid var(--border-color)',
+          borderRadius: 'var(--radius-md)',
           display: 'flex',
           flexDirection: 'column',
           overflowY: 'auto'
@@ -346,6 +353,9 @@ export default function Home() {
 
         {/* Right Column - Analysis & Events */}
         <div className="col col-right" style={{
+          background: 'var(--bg-color)',
+          border: '1px solid var(--border-color)',
+          borderRadius: 'var(--radius-md)',
           display: 'flex',
           flexDirection: 'column',
           overflowY: 'auto'
