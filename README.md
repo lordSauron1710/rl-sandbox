@@ -50,6 +50,8 @@ The frontend uses a **responsive 3-column dashboard layout**:
 
 On mobile, sidebars collapse into slide-out panels with bottom navigation.
 
+![Frontend Design Reference](docs/assets/frontend-design-reference.png)
+
 ## Prerequisites
 
 - Python 3.10+
