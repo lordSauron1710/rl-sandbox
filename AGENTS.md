@@ -54,9 +54,19 @@ You are a senior product engineer.
 ## Tech Stack (v0)
 
 - **Backend:** Python, FastAPI, Gymnasium, Stable-Baselines3
-- **Frontend:** Web-based (lightweight, responsive)
-- **Storage:** SQLite or local file persistence
-- **Scope:** Single environment, two algorithms (DQN, PPO)
+- **Frontend:** Next.js, TypeScript, Tailwind CSS
+- **Storage:** SQLite + local file persistence
+- **Environments:** LunarLander-v2, CartPole-v1, BipedalWalker-v3
+- **Algorithms:** DQN (discrete only), PPO (all)
+
+## Design Reference
+
+See `docs/assets/frontend-design-reference.png` for the target UI design.
+
+**Layout:** Single-page 3-column dashboard
+- Left sidebar: Environment select + Hyperparameters + Train/Test buttons
+- Center panel: Live Feed + Metrics (Mean Reward, Eps Length, Loss, FPS) + Reward History chart
+- Right sidebar: Analysis & Explainer + Event Log
 
 ## Development Principles
 

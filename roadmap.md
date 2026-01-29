@@ -9,7 +9,7 @@
 ---
 
 ### Prompt 01 — Monorepo scaffold
-// NOT STARTED
+// EXECUTED
 
 Create a monorepo scaffold for an RL Gym Visualizer v0.
 
@@ -20,7 +20,7 @@ Create a monorepo scaffold for an RL Gym Visualizer v0.
 - root README with run instructions
 
 **Include:**
-- package manager choice for frontend (pnpm preferred)
+- package manager choice for frontend (npm preferred)
 - python packaging for backend (pyproject or requirements.txt)
 - .gitignore for python/node artifacts
 - scripts for dev startup
@@ -39,12 +39,16 @@ Design the run storage layout and SQLite schema for experiments.
 - Store artifacts on disk under runs/<run_id>/
 - Metrics are append-only JSONL
 - Evaluation produces MP4 files, keep only latest K=3 by default
+- Event log stored for each run
 
 **Output:**
-- SQLite tables with columns + indexes
+- SQLite tables with columns + indexes:
+  - runs (id, env_id, algorithm, status, config_json, created_at, updated_at)
+  - events (id, run_id, timestamp, event_type, message)
 - On-disk folder layout
-- Example run config JSON
-- Example metrics JSONL line formats
+- Example run config JSON (learning_rate, total_timesteps, seed)
+- Example metrics JSONL line formats (episode, reward, length, loss, fps, timestamp)
+- Example event types (training_started, checkpoint_saved, evaluation_started, warning, error)
 
 ---
 
@@ -54,20 +58,24 @@ Design the run storage layout and SQLite schema for experiments.
 Define the minimal backend API contract for v0 using REST + SSE.
 
 **Must include:**
-- create run
+- list environments (with metadata: id, name, action_space_type, obs_space_dims)
+- create run (env_id, algorithm, learning_rate, total_timesteps)
 - start training
 - stop training
 - get run detail
 - list runs
-- stream metrics via SSE
-- trigger evaluation
+- stream metrics via SSE (reward, episode_length, loss, fps, episode_count)
+- trigger evaluation (test mode)
+- stream live render frames (for Live Feed)
 - fetch latest evaluation video URL
 - fetch run artifacts (config/metrics)
+- list events (for Event Log)
 
 **Output:**
 - Endpoint list with method, path, request body, response shape
-- SSE event formats
+- SSE event formats (metrics, frames, events)
 - Error codes and status transitions
+- WebSocket option for live frame streaming if SSE insufficient
 
 ======================================================================
 
@@ -101,56 +109,74 @@ Implement the FastAPI backend skeleton.
 Implement an in-process training runner for Stable-Baselines3.
 
 **Constraints:**
-- Only CartPole-v1
-- Algorithms: PPO and DQN
+- Supported environments:
+  - LunarLander-v2 (DISCRETE, BOX(8))
+  - CartPole-v1 (DISCRETE, BOX(4))
+  - BipedalWalker-v3 (CONTINUOUS, BOX(24))
+- Algorithms: PPO and DQN (DQN only for discrete envs)
 - Must be interruptible via stop endpoint
-- Must write metrics to JSONL as training progresses
+- Must write metrics to JSONL as training progresses (reward, episode length, loss, fps)
 - Must update run status in SQLite
+- Must support configurable hyperparameters (learning_rate, total_timesteps)
 
 **Output:**
 - Training runner module
 - start/stop endpoints wired to runner
 - metrics writing format documented
+- environment registry with metadata (action space type, obs space dims)
 - ensure API stays responsive while training runs (thread or async safe approach)
 
 ---
 
-### Prompt 06 — Metrics streaming (SSE)
+### Prompt 06 — Metrics streaming (SSE) + Live frames
 // NOT STARTED
 
-Implement SSE metrics streaming for a run.
+Implement SSE metrics streaming and optional live frame streaming for a run.
 
 **Requirements:**
-- Endpoint: /runs/{id}/stream
-- Stream new metrics lines as they are appended
-- Throttle: max 4 updates per second
-- Client reconnect should resume from last event id or timestamp if provided
+- Metrics endpoint: /runs/{id}/stream
+  - Stream new metrics lines as they are appended
+  - Payload: episode, reward, episode_length, loss, fps, timestamp
+  - Throttle: max 4 updates per second
+  - Client reconnect should resume from last event id or timestamp if provided
+- Frames endpoint: /runs/{id}/frames (WebSocket recommended)
+  - Stream rendered environment frames during training (optional, can be disabled)
+  - Target: 10-15 fps during training (lower than eval to save resources)
+  - Frame format: base64 JPEG or PNG
+- Events endpoint: /runs/{id}/events
+  - Stream event log entries in real-time
 
 **Output:**
-- SSE implementation
-- event payload schema
-- example curl usage
+- SSE implementation for metrics
+- WebSocket implementation for frames (or SSE with base64)
+- event payload schemas
+- example curl/wscat usage
 
 ---
 
-### Prompt 07 — Evaluation recorder (MP4)
+### Prompt 07 — Evaluation recorder (MP4) + Live frame streaming
 // NOT STARTED
 
-Implement evaluation for a trained policy.
+Implement evaluation for a trained policy with live visualization support.
 
 **Requirements:**
-- Endpoint to trigger eval on-demand
-- Runs N=5 episodes by default
+- Endpoint to trigger eval on-demand (TEST button)
+- Runs N=5 or N=10 episodes (configurable)
 - Records an MP4 (<=720p) using Gymnasium RecordVideo wrapper or equivalent
 - Save under runs/<id>/eval/eval_<timestamp>.mp4
 - Retain only latest K=3 eval videos, delete older
 - Store eval summary JSON (return mean, length mean, termination stats)
+- Stream live render frames during eval for Live Feed display:
+  - WebSocket or base64-encoded frames via SSE
+  - Target: 15-30 fps for smooth visualization
+  - Include current episode + reward in frame metadata
 
 **Output:**
 - eval module
 - endpoints
 - artifact retention logic
 - summary JSON schema
+- live frame streaming implementation
 
 ---
 
@@ -176,122 +202,166 @@ Add endpoints to retrieve artifacts and serve eval MP4s.
 
 ======================================================================
 
+**Reference Design:** See `docs/assets/frontend-design-reference.png`
+
+**Layout:** Single-page 3-column dashboard
+- Left sidebar: Environment select + Hyperparameters
+- Center panel: Live feed + Metrics + Reward history
+- Right sidebar: Analysis & Explainer + Event log
+
+**Design System:**
+- Light/white background, dark text
+- Monospace/tech font for headers ("RL LAB // GYM MANAGER")
+- Minimal borders, card-based components
+- Red accent for warnings
+- Version indicator in header (e.g., "V2.4.0")
+
 ---
 
-### Prompt 09 — Next.js scaffold + design system
+### Prompt 09 — Next.js scaffold + 3-column layout shell
 // NOT STARTED
 
-Create the Next.js frontend scaffold.
+Create the Next.js frontend scaffold with the 3-column dashboard layout.
 
 **Requirements:**
-- Tailwind setup
-- Basic layout shell (header, sidebar on desktop, bottom nav or drawer on mobile)
-- Pages: Home (runs list + new run), Run detail dashboard, Compare, Explain
-- Minimal component library approach (no heavy dependencies)
+- Tailwind setup with custom design tokens
+- Single-page dashboard layout:
+  - Header: "RL LAB // GYM MANAGER" branding + version indicator
+  - Left sidebar (fixed width ~250px)
+  - Center panel (flexible, main content)
+  - Right sidebar (fixed width ~300px)
+- Mobile: Collapsible sidebars or stacked layout
+- Monospace font for headers (e.g., JetBrains Mono or similar)
 
 **Output:**
 - frontend folder structure
-- routing plan
-- responsive layout implemented with placeholder content
+- layout components (Header, LeftSidebar, CenterPanel, RightSidebar)
+- responsive breakpoints defined
+- placeholder content in each panel
 
 ---
 
-### Prompt 10 — Runs list + create run UI
+### Prompt 10 — Left sidebar: Environment select + Hyperparameters
 // NOT STARTED
 
-Implement Home page.
+Implement the left sidebar with environment selection and training configuration.
 
 **Requirements:**
-- List runs from backend
-- Create run form:
-  - algo select: PPO/DQN
-  - preset select: Fast/Stable/High Score (maps to configs)
-  - seed input
-  - total timesteps input (bounded)
-- Start button triggers run creation + start training, then navigates to run page
+- Environment Select section:
+  - List of environments as selectable cards
+  - Each card shows: Name, ID badge, action space (DISCRETE/CONTINUOUS), observation space (BOX with dimensions)
+  - Environments: LunarLander-v2, CartPole-v1, BipedalWalker-v3
+  - Selected state styling
+- Hyperparameters section:
+  - Algorithm dropdown (PPO / DQN)
+  - Learning Rate input (default: 0.0003)
+  - Total Timesteps input (default: 1,000,000)
+- Action buttons:
+  - TRAIN button (primary, filled)
+  - TEST button (secondary, outlined)
 
 **Output:**
-- UI components
-- API client layer
-- form validation + loading states
+- EnvironmentCard component
+- HyperparametersForm component
+- Form state management
+- API integration for starting training/testing
 
 ---
 
-### Prompt 11 — Run dashboard charts + live stream
+### Prompt 11 — Center panel: Live feed + Metrics + Reward history
 // NOT STARTED
 
-Implement Run dashboard.
+Implement the center panel with live visualization and training metrics.
 
 **Requirements:**
-- Show status, elapsed time, stop button
-- Live charts fed by SSE:
-  - Reward curve
-  - Episode length curve
-  - DQN: epsilon, loss
-  - PPO: entropy, approx_kl (or clip_fraction)
-- Charts must be lightweight and update smoothly
-- Mobile layout: charts stacked, playback below
+- Header row: "LIVE FEED" label + RECORD and RESET buttons
+- Status badges: Episode count, Current reward (with +/- sign)
+- Live visualization area:
+  - Display environment render (video/canvas from backend stream)
+  - Dark background for contrast
+- Metrics row (4 cards):
+  - Mean Reward
+  - Eps Length (episode length)
+  - Loss
+  - FPS
+- Reward History chart:
+  - "REWARD HISTORY (LAST 100)" label
+  - Bar chart showing episode rewards
+  - Lightweight chart library (e.g., lightweight-charts or custom canvas)
 
 **Output:**
-- SSE client implementation
-- chart components
-- throttled updates on UI side too
+- LiveFeed component with video/stream display
+- MetricsRow component
+- RewardHistoryChart component
+- SSE client for real-time updates
 
 ---
 
-### Prompt 12 — Eval playback card
+### Prompt 12 — Right sidebar: Analysis & Explainer + Event log
 // NOT STARTED
 
-Implement evaluation playback.
+Implement the right sidebar with AI analysis and event logging.
 
 **Requirements:**
-- "Run Evaluation" button
-- Show latest eval MP4 in a responsive video player
-- Show eval summary card (mean return, mean length, timestamp)
-- Handle states: no eval yet, eval running, eval failed
+- Analysis & Explainer section:
+  - "POLICY BEHAVIOR DETECTED" header
+  - Dynamic insight text based on training state
+  - Examples: convergence detection, variance analysis, reward shaping suggestions
+  - "GENERATE REPORT" button
+- Event Log section:
+  - "EVENT LOG" header
+  - Timestamped event entries (HH:MM format)
+  - Event types: checkpoint saved, evaluation started, warnings (in red), training started, environment initialized
+  - Scrollable list, newest at top
 
 **Output:**
-- components + API wiring
-- clean responsive playback UX
+- AnalysisPanel component
+- EventLog component
+- Event state management
+- Mock insights for v0 (real AI analysis can come later)
 
 ---
 
-### Prompt 13 — Compare view (v0-lite)
+### Prompt 13 — Evaluation playback integration
 // NOT STARTED
 
-Implement Compare view for 2 runs.
+Integrate evaluation playback into the Live Feed panel.
 
 **Requirements:**
-- Select two completed runs
-- Overlay reward curves
-- Metrics table:
-  - best moving average return
-  - time-to-threshold (e.g., return >= 450)
-  - stability: std over last 20 episodes
-- Works on mobile (stacked)
+- TEST button triggers evaluation run
+- Live Feed switches to show evaluation video
+- Status badges update to show eval episode/reward
+- Event log shows "Evaluation started: N episodes"
+- After eval completes:
+  - Display recorded MP4 in Live Feed area
+  - Update metrics with eval summary
+  - Log "Evaluation complete" event
 
 **Output:**
-- compare page + utilities to compute derived metrics
+- Eval state management
+- Video player integration
+- Seamless transition between training and eval views
 
 ---
 
-### Prompt 14 — Explain pages (DQN + PPO)
+### Prompt 14 — Analysis insights engine (v0)
 // NOT STARTED
 
-Implement Explain section.
+Implement basic analysis insights for the Analysis & Explainer panel.
 
 **Requirements:**
-- Two pages: DQN and PPO
-- Short, skimmable sections:
-  - What it optimizes
-  - What data it learns from
-  - Key knobs (mapped to presets)
-  - Common failure modes
-- Optional: show run-specific hints if a run is selected
+- Rule-based insights (not AI for v0):
+  - Convergence detection: "Agent has converged on a stable strategy"
+  - Variance tracking: "Variance reduced by X% over last N episodes"
+  - Reward shaping hints: "Consider adjusting [hyperparameter]"
+  - Failure detection: "Training may be stuck, try different learning rate"
+- Insight updates based on metrics stream
+- Generate Report: Export current metrics + insights as JSON/text
 
 **Output:**
-- markdown or component-based explainers
-- lightweight styling
+- InsightsEngine service
+- Insight templates
+- Report generation utility
 
 ======================================================================
 
