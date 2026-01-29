@@ -3,9 +3,9 @@
 import { useState } from 'react'
 
 const environments = [
-  { name: 'LunarLander-v2', id: 'ID:01', details: 'Discrete / Box(8)' },
-  { name: 'CartPole-v1', id: 'ID:02', details: 'Discrete / Box(4)' },
-  { name: 'BipedalWalker-v3', id: 'ID:03', details: 'Continuous / Box(24)' }
+  { name: 'LunarLander-v2', details: 'Discrete / Box(8)' },
+  { name: 'CartPole-v1', details: 'Discrete / Box(4)' },
+  { name: 'BipedalWalker-v3', details: 'Continuous / Box(24)' }
 ]
 
 const logs = [
@@ -17,6 +17,21 @@ const logs = [
 ]
 
 const barHeights = [20, 35, 40, 30, 55, 65, 45, 70, 80, 75, 90, 60, 50, 40, 55, 85, 95, 80, 70, 60, 65, 55, 45, 35]
+
+const algorithmExplanations = {
+  'PPO (Proximal Policy)': {
+    name: 'Proximal Policy Optimization',
+    intuition: 'PPO learns by trial and error, but with a safety net. It tries new actions, measures how much better or worse they are, then updates its strategy—but never too drastically. Think of it like a careful student who improves steadily without making wild guesses.',
+    keyIdea: 'Clip the policy updates to prevent destructive large changes',
+    bestFor: 'Continuous and discrete action spaces, stable training'
+  },
+  'DQN (Deep Q-Network)': {
+    name: 'Deep Q-Network',
+    intuition: 'DQN learns the value of each action in each situation. It builds a mental map of "if I\'m here and do this, how good will things be?" Over time, it simply picks the action with the highest expected value.',
+    keyIdea: 'Learn a Q-function that estimates future rewards for each action',
+    bestFor: 'Discrete action spaces, game-like environments'
+  }
+}
 
 export default function Home() {
   const [activeEnv, setActiveEnv] = useState(0)
@@ -107,10 +122,7 @@ export default function Home() {
                 className={`env-card ${activeEnv === index ? 'active' : ''}`}
                 onClick={() => setActiveEnv(index)}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontWeight: 600 }}>{env.name}</span>
-                  <span style={{ fontSize: '10px' }}>{env.id}</span>
-                </div>
+                <div style={{ fontWeight: 600, marginBottom: '4px' }}>{env.name}</div>
                 <span className="label" style={{ margin: 0 }}>{env.details}</span>
               </div>
             ))}
@@ -132,7 +144,9 @@ export default function Home() {
           {/* Hyperparameters Form */}
           <div style={{
             padding: 'var(--space-md)',
-            borderBottom: '1px solid var(--border-color)'
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column'
           }}>
             <div style={{ marginBottom: 'var(--space-md)' }}>
               <label className="label">Algorithm</label>
@@ -158,14 +172,14 @@ export default function Home() {
                 onChange={(e) => setTimesteps(e.target.value)}
               />
             </div>
+            <div style={{ flex: 1 }} />
             <div style={{ 
               display: 'grid', 
               gridTemplateColumns: '1fr 1fr', 
-              gap: 'var(--space-sm)', 
-              marginTop: 'var(--space-lg)' 
+              gap: 'var(--space-md)'
             }}>
-              <button className="btn btn-primary">Train</button>
-              <button className="btn btn-secondary">Test</button>
+              <button className="btn btn-primary" style={{ padding: '14px 20px', fontSize: '12px' }}>Train</button>
+              <button className="btn btn-secondary" style={{ padding: '14px 20px', fontSize: '12px' }}>Test</button>
             </div>
           </div>
         </div>
@@ -333,8 +347,7 @@ export default function Home() {
           <div style={{
             padding: 'var(--space-md)',
             borderBottom: '1px solid var(--border-color)',
-            background: 'var(--bg-color)',
-            flex: 1
+            background: 'var(--bg-color)'
           }}>
             <span className="label">REWARD HISTORY (LAST 100)</span>
             <div style={{
@@ -347,6 +360,74 @@ export default function Home() {
               {barHeights.map((height, index) => (
                 <div key={index} className="bar" style={{ height: `${height}%` }} />
               ))}
+            </div>
+          </div>
+
+          {/* Algorithm Explainer */}
+          <div style={{
+            padding: 'var(--space-md)',
+            background: 'var(--bg-color)',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <span className="label">ALGORITHM INTUITION</span>
+            <div style={{
+              background: 'var(--surface-color)',
+              borderRadius: 'var(--radius-sm)',
+              marginTop: 'var(--space-sm)',
+              flex: 1,
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              minHeight: '80px'
+            }}>
+              <div style={{
+                padding: 'var(--space-md)',
+                borderRight: '1px solid var(--border-color)'
+              }}>
+                <div className="label" style={{ marginBottom: 'var(--space-sm)' }}>
+                  Algorithm
+                </div>
+                <div style={{ 
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '12px',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.6
+                }}>
+                  {algorithmExplanations[algorithm as keyof typeof algorithmExplanations]?.name}
+                </div>
+              </div>
+              <div style={{
+                padding: 'var(--space-md)',
+                borderRight: '1px solid var(--border-color)'
+              }}>
+                <div className="label" style={{ marginBottom: 'var(--space-sm)' }}>
+                  Key Idea
+                </div>
+                <div style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '12px',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.6
+                }}>
+                  {algorithmExplanations[algorithm as keyof typeof algorithmExplanations]?.keyIdea}
+                </div>
+              </div>
+              <div style={{
+                padding: 'var(--space-md)'
+              }}>
+                <div className="label" style={{ marginBottom: 'var(--space-sm)' }}>
+                  Best For
+                </div>
+                <div style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '12px',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.6
+                }}>
+                  {algorithmExplanations[algorithm as keyof typeof algorithmExplanations]?.bestFor}
+                </div>
+              </div>
             </div>
           </div>
         </div>
