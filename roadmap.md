@@ -30,7 +30,7 @@ Return the full folder tree and the minimal files to boot both services.
 ---
 
 ### Prompt 02 — Define run storage layout + SQLite schema
-// NOT STARTED
+// EXECUTED
 
 Design the run storage layout and SQLite schema for experiments.
 

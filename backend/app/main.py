@@ -1,13 +1,26 @@
 """
 RL Gym Visualizer - FastAPI Backend
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.db.database import init_db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize resources on startup."""
+    # Initialize database
+    init_db()
+    yield
+
 
 app = FastAPI(
     title="RL Gym Visualizer",
     description="Backend API for RL training visualization",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS middleware for frontend communication
