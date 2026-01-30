@@ -449,3 +449,35 @@ If in-process training causes responsiveness issues, migrate training/eval to a 
 - worker design
 - implementation steps
 - minimal code changes required
+
+---
+
+### Prompt 19 — Deployment: Vercel (frontend) + Fly.io (backend)
+// NOT STARTED
+
+Configure deployment for production.
+
+**Requirements:**
+- Frontend (Vercel):
+  - Configure `next.config.js` for production
+  - Set `NEXT_PUBLIC_API_URL` environment variable
+  - Ensure static/SSR pages work correctly
+  - Add `vercel.json` if needed for rewrites/headers
+- Backend (Fly.io):
+  - Create `fly.toml` configuration
+  - Create `Dockerfile` for Python backend
+  - Configure CORS to allow Vercel frontend domain
+  - Set up persistent volume for SQLite database and run artifacts
+  - Configure health checks
+  - Set environment variables (CORS_ORIGINS, etc.)
+- Documentation:
+  - Deployment guide in README or docs/
+  - Environment variable reference
+  - Troubleshooting common issues
+
+**Output:**
+- `fly.toml` for backend
+- `Dockerfile` for backend
+- `vercel.json` for frontend (if needed)
+- Updated CORS configuration in FastAPI
+- Deployment documentation

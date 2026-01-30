@@ -14,8 +14,8 @@ This repository contains the development of an **RL Gym Visualizer** - a lightwe
 
 ```
 ┌─────────────────┐         ┌─────────────────────────┐
-│   Vercel        │         │   Backend Host          │
-│   (Frontend)    │ ◄─────► │   (Railway/Fly.io/VPS)  │
+│   Vercel        │         │   Fly.io                │
+│   (Frontend)    │ ◄─────► │   (Backend)             │
 │                 │   API   │                         │
 │   Next.js       │   SSE   │   FastAPI + Gymnasium   │
 │   Static/SSR    │   WS    │   + Stable-Baselines3   │
@@ -28,7 +28,9 @@ This repository contains the development of an **RL Gym Visualizer** - a lightwe
 - Backend requires heavy compute (PyTorch, Gymnasium rendering)
 - Frontend is static/SSR and deploys perfectly on Vercel
 
-**Backend hosting options:** Railway, Fly.io, Render, or self-hosted VPS
+**Chosen hosting:**
+- **Frontend:** Vercel (free tier)
+- **Backend:** Fly.io (free tier - 3 shared CPUs, persistent processes, WebSocket support)
 
 ### Key Architectural Decisions
 
