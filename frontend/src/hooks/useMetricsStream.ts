@@ -10,6 +10,7 @@ export interface UseMetricsStreamResult {
   error: Error | null
   connect: (runId: string) => void
   disconnect: () => void
+  clear: () => void
 }
 
 /**
@@ -30,6 +31,11 @@ export function useMetricsStream(): UseMetricsStreamResult {
       eventSourceRef.current = null
     }
     setIsConnected(false)
+  }, [])
+
+  const clear = useCallback(() => {
+    setMetrics(null)
+    setRewardHistory([])
   }, [])
 
   const connect = useCallback((runId: string) => {
@@ -122,5 +128,6 @@ export function useMetricsStream(): UseMetricsStreamResult {
     error,
     connect,
     disconnect,
+    clear,
   }
 }

@@ -17,6 +17,7 @@ export interface UseLiveFramesResult {
   error: Error | null
   connect: (runId: string, fps?: number) => void
   disconnect: () => void
+  clear: () => void
   pause: () => void
   resume: () => void
   setFps: (fps: number) => void
@@ -50,6 +51,10 @@ export function useLiveFrames(): UseLiveFramesResult {
     }
     setIsConnected(false)
     isPausedRef.current = false
+  }, [])
+
+  const clear = useCallback(() => {
+    setFrame(null)
   }, [])
 
   const connect = useCallback((runId: string, fps: number = 15) => {
@@ -147,6 +152,7 @@ export function useLiveFrames(): UseLiveFramesResult {
     error,
     connect,
     disconnect,
+    clear,
     pause,
     resume,
     setFps,

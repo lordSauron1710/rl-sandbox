@@ -78,6 +78,7 @@ export default function Home() {
     isConnected: isMetricsConnected,
     connect: connectMetrics,
     disconnect: disconnectMetrics,
+    clear: clearMetricsStream,
   } = useMetricsStream()
 
   // Live frame streaming
@@ -86,6 +87,7 @@ export default function Home() {
     isConnected: isFramesConnected,
     connect: connectFrames,
     disconnect: disconnectFrames,
+    clear: clearFramesStream,
   } = useLiveFrames()
 
   // Environment state - select first environment when loaded
@@ -242,6 +244,10 @@ export default function Home() {
   }
 
   const handleReset = () => {
+    disconnectMetrics()
+    disconnectFrames()
+    clearMetricsStream()
+    clearFramesStream()
     setMetrics({
       meanReward: 0,
       episodeLength: 0,
@@ -249,9 +255,7 @@ export default function Home() {
       fps: 0,
     })
     setIsRecording(false)
-    setCurrentInsight(null) // Clear analysis insight
-    disconnectMetrics()
-    disconnectFrames()
+    setCurrentInsight(null)
     addEvent('Session reset', 'info')
   }
 
