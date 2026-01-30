@@ -2,6 +2,8 @@
 
 A lightweight web application for visualizing reinforcement learning training and evaluation.
 
+![Frontend Screenshot](docs/assets/frontend-screenshot.png)
+
 ## Features
 
 - Train RL agents on CartPole-v1 environment
@@ -60,8 +62,6 @@ The frontend uses a **responsive 3-column dashboard layout**:
 - **Right sidebar:** Analysis & Explainer + Event log
 
 On mobile, sidebars collapse into slide-out panels with bottom navigation.
-
-![Frontend Screenshot](docs/assets/frontend-screenshot.png)
 
 ## Prerequisites
 
