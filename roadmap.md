@@ -155,7 +155,7 @@ Implement SSE metrics streaming and optional live frame streaming for a run.
 ---
 
 ### Prompt 07 — Evaluation recorder (MP4) + Live frame streaming
-// NOT STARTED
+// EXECUTED
 
 Implement evaluation for a trained policy with live visualization support.
 

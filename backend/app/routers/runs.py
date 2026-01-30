@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.db import runs_repository, events_repository
-from app.models.run import RunStatus
+from app.models.run import RunStatus, EvaluationConfig, EvaluationSummary as EvalSummaryModel
 from app.models.event import EventType
 from app.models.environment import get_environment
 from app.storage.run_storage import RunStorage
@@ -514,4 +514,263 @@ async def list_events(
             for e in events
         ],
         total=total,
+    )
+
+
+# ============================================================================
+# Evaluation Control (Prompt 07)
+# ============================================================================
+
+class EvaluationRequest(BaseModel):
+    """Request schema for starting evaluation."""
+    num_episodes: int = Field(default=5, ge=1, le=100, description="Number of episodes")
+    stream_frames: bool = Field(default=True, description="Stream live frames")
+    target_fps: int = Field(default=30, ge=1, le=30, description="Target FPS for streaming")
+
+
+class EvaluationResponse(BaseModel):
+    """Response schema for evaluation results."""
+    num_episodes: int
+    mean_reward: float
+    std_reward: float
+    min_reward: float
+    max_reward: float
+    mean_length: float
+    std_length: float
+    termination_rate: float
+    video_path: Optional[str] = None
+    timestamp: str
+
+
+class EvaluationProgressResponse(BaseModel):
+    """Response schema for evaluation progress."""
+    current_episode: int
+    total_episodes: int
+    percent_complete: float
+    is_running: bool
+    started_at: str
+
+
+@router.post("/{run_id}/evaluate", response_model=MessageResponse)
+async def start_evaluation(
+    run_id: str,
+    request: EvaluationRequest = EvaluationRequest(),
+) -> MessageResponse:
+    """
+    Start evaluation for a completed or stopped run.
+    
+    Runs N evaluation episodes using the trained model, records an MP4 video,
+    and streams live frames during evaluation.
+    
+    The evaluation runs in a background thread. Use the WebSocket endpoint
+    /runs/{id}/ws/frames to receive live frames during evaluation.
+    
+    **Requirements:**
+    - Run must be in 'completed' or 'stopped' status (must have trained model)
+    - Cannot evaluate while training is in progress
+    
+    **Artifacts produced:**
+    - MP4 video saved to runs/<id>/eval/eval_<timestamp>.mp4
+    - Summary JSON saved to runs/<id>/eval/eval_<timestamp>.json
+    - Only the latest 3 evaluation videos/summaries are retained
+    """
+    run_dict = runs_repository.get_run(run_id)
+    if not run_dict:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "not_found",
+                    "message": "Run not found",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    # Check valid states for evaluation
+    valid_states = [RunStatus.COMPLETED.value, RunStatus.STOPPED.value]
+    if run_dict["status"] not in valid_states:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "invalid_status",
+                    "message": f"Cannot evaluate run in {run_dict['status']} status",
+                    "details": {
+                        "current_status": run_dict["status"],
+                        "valid_states": valid_states
+                    }
+                }
+            }
+        )
+    
+    # Start evaluation via manager
+    manager = get_training_manager()
+    result = manager.start_evaluation(
+        run_id=run_id,
+        num_episodes=request.num_episodes,
+        stream_frames=request.stream_frames,
+        target_fps=request.target_fps,
+    )
+    
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "evaluation_error",
+                    "message": result["error"],
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    return MessageResponse(
+        id=run_id,
+        status="evaluating",
+        message=result["message"]
+    )
+
+
+@router.post("/{run_id}/evaluate/stop", response_model=MessageResponse)
+async def stop_evaluation(run_id: str) -> MessageResponse:
+    """
+    Stop a running evaluation.
+    
+    Sends a stop signal to the evaluation thread. Evaluation will stop gracefully
+    after the current episode completes.
+    """
+    run_dict = runs_repository.get_run(run_id)
+    if not run_dict:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "not_found",
+                    "message": "Run not found",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    if run_dict["status"] != RunStatus.EVALUATING.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "not_evaluating",
+                    "message": "Run is not currently being evaluated",
+                    "details": {"current_status": run_dict["status"]}
+                }
+            }
+        )
+    
+    # Stop evaluation via manager
+    manager = get_training_manager()
+    result = manager.stop_evaluation(run_id)
+    
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "stop_error",
+                    "message": result["error"],
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    return MessageResponse(
+        id=run_id,
+        status="stopping",
+        message=result["message"]
+    )
+
+
+@router.get("/{run_id}/evaluate/progress", response_model=EvaluationProgressResponse)
+async def get_evaluation_progress(run_id: str) -> EvaluationProgressResponse:
+    """
+    Get progress of a running evaluation.
+    
+    Returns current episode, total episodes, and completion percentage.
+    """
+    run_dict = runs_repository.get_run(run_id)
+    if not run_dict:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "not_found",
+                    "message": "Run not found",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    manager = get_training_manager()
+    progress = manager.get_evaluation_progress(run_id)
+    
+    if not progress:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "no_evaluation",
+                    "message": "No active evaluation found for this run",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    return EvaluationProgressResponse(**progress)
+
+
+@router.get("/{run_id}/evaluate/latest", response_model=EvaluationResponse)
+async def get_latest_evaluation(run_id: str) -> EvaluationResponse:
+    """
+    Get the latest evaluation summary for a run.
+    
+    Returns statistics from the most recent evaluation run including
+    mean reward, episode lengths, and path to the recorded video.
+    """
+    run_dict = runs_repository.get_run(run_id)
+    if not run_dict:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "not_found",
+                    "message": "Run not found",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    storage = RunStorage(run_id)
+    summary = storage.get_latest_eval()
+    
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "no_evaluation",
+                    "message": "No evaluation results found for this run",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    return EvaluationResponse(
+        num_episodes=summary["num_episodes"],
+        mean_reward=summary["mean_reward"],
+        std_reward=summary["std_reward"],
+        min_reward=summary["min_reward"],
+        max_reward=summary["max_reward"],
+        mean_length=summary["mean_length"],
+        std_length=summary["std_length"],
+        termination_rate=summary["termination_rate"],
+        video_path=summary.get("video_path"),
+        timestamp=summary["timestamp"],
     )

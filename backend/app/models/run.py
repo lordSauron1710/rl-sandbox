@@ -56,3 +56,44 @@ class Run(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+# ============================================================================
+# Evaluation Schemas
+# ============================================================================
+
+class EvaluationConfig(BaseModel):
+    """Configuration for evaluation."""
+    num_episodes: int = Field(
+        default=5, ge=1, le=100, description="Number of episodes"
+    )
+    stream_frames: bool = Field(
+        default=True, description="Whether to stream live frames"
+    )
+    target_fps: int = Field(
+        default=30, ge=1, le=30, description="Target FPS for streaming"
+    )
+
+
+class EvaluationEpisode(BaseModel):
+    """Result from a single evaluation episode."""
+    episode_num: int
+    total_reward: float
+    episode_length: int
+    terminated: bool
+    truncated: bool
+
+
+class EvaluationSummary(BaseModel):
+    """Summary statistics from an evaluation run."""
+    num_episodes: int
+    mean_reward: float
+    std_reward: float
+    min_reward: float
+    max_reward: float
+    mean_length: float
+    std_length: float
+    termination_rate: float
+    video_path: Optional[str] = None
+    timestamp: str
+    episodes: list[EvaluationEpisode]

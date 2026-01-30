@@ -1,9 +1,9 @@
 """
-Training manager for coordinating background training runs.
+Training manager for coordinating background training and evaluation runs.
 
 This module provides:
-- Thread-safe management of training jobs
-- Start/stop control for training runs
+- Thread-safe management of training and evaluation jobs
+- Start/stop control for training and evaluation runs
 - Progress tracking and status updates
 - Singleton pattern for global access
 """
@@ -17,6 +17,7 @@ from app.db import runs_repository, events_repository
 from app.models.run import RunStatus
 from app.models.event import EventType
 from app.training.runner import TrainingRunner
+from app.training.evaluator import EvaluationRunner, EvaluationSummary
 
 
 @dataclass
@@ -30,6 +31,19 @@ class TrainingJob:
     )
     current_timestep: int = 0
     total_timesteps: int = 0
+
+
+@dataclass
+class EvaluationJob:
+    """Represents an active evaluation job."""
+    run_id: str
+    thread: threading.Thread
+    stop_event: threading.Event
+    started_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    current_episode: int = 0
+    total_episodes: int = 0
 
 
 class TrainingManager:
@@ -65,6 +79,7 @@ class TrainingManager:
             return
 
         self._jobs: Dict[str, TrainingJob] = {}
+        self._eval_jobs: Dict[str, EvaluationJob] = {}
         self._jobs_lock = threading.Lock()
         self._initialized = True
 
@@ -330,10 +345,255 @@ class TrainingManager:
             "message": "Stop signal sent, training will stop after current step",
         }
 
-    def cleanup(self) -> None:
-        """Stop all active training jobs."""
+    # ========================================================================
+    # Evaluation Management
+    # ========================================================================
+
+    def is_evaluating(self, run_id: str) -> bool:
+        """Check if a run is currently being evaluated."""
         with self._jobs_lock:
+            job = self._eval_jobs.get(run_id)
+            return job is not None and job.thread.is_alive()
+
+    def get_evaluation_progress(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Get progress for an evaluation run."""
+        with self._jobs_lock:
+            job = self._eval_jobs.get(run_id)
+            if job is None:
+                return None
+            pct = 0.0
+            if job.total_episodes > 0:
+                pct = job.current_episode / job.total_episodes * 100
+            return {
+                "current_episode": job.current_episode,
+                "total_episodes": job.total_episodes,
+                "percent_complete": pct,
+                "is_running": job.thread.is_alive(),
+                "started_at": job.started_at.isoformat(),
+            }
+
+    def start_evaluation(
+        self,
+        run_id: str,
+        num_episodes: int = 5,
+        stream_frames: bool = True,
+        target_fps: int = 30,
+    ) -> Dict[str, Any]:
+        """
+        Start evaluation for a completed run in a background thread.
+
+        Args:
+            run_id: The run ID to evaluate
+            num_episodes: Number of evaluation episodes (default 5)
+            stream_frames: Whether to stream live frames (default True)
+            target_fps: Target FPS for frame streaming (default 30)
+
+        Returns:
+            Dict with success status and message
+        """
+        # Check if already evaluating
+        if self.is_evaluating(run_id):
+            return {
+                "success": False,
+                "error": "Evaluation already in progress for this run",
+            }
+
+        # Check if training is in progress
+        if self.is_training(run_id):
+            return {
+                "success": False,
+                "error": "Cannot evaluate while training is in progress",
+            }
+
+        # Get run from database
+        run_dict = runs_repository.get_run(run_id)
+        if not run_dict:
+            return {
+                "success": False,
+                "error": "Run not found",
+            }
+
+        # Check status - must be completed or stopped (has trained model)
+        current_status = run_dict["status"]
+        valid_statuses = [RunStatus.COMPLETED.value, RunStatus.STOPPED.value]
+        if current_status not in valid_statuses:
+            return {
+                "success": False,
+                "error": f"Cannot evaluate run in {current_status} status. "
+                         f"Run must be completed or stopped.",
+            }
+
+        # Parse config
+        config = json.loads(run_dict["config_json"])
+
+        # Create stop event
+        stop_event = threading.Event()
+
+        # Create job
+        job = EvaluationJob(
+            run_id=run_id,
+            thread=threading.Thread(target=lambda: None),  # Placeholder
+            stop_event=stop_event,
+            total_episodes=num_episodes,
+        )
+
+        # Store previous status to restore after evaluation
+        previous_status = current_status
+
+        # Evaluation thread function
+        def evaluation_thread():
+            try:
+                # Update status to evaluating
+                runs_repository.update_run_status(
+                    run_id=run_id,
+                    status=RunStatus.EVALUATING,
+                )
+
+                # Log evaluation started
+                algo = config.get('algorithm', 'unknown')
+                env = config.get('env_id', 'unknown')
+                events_repository.create_event(
+                    run_id=run_id,
+                    event_type=EventType.EVALUATION_STARTED,
+                    message=f"Evaluation started: {num_episodes} episodes on {env}",
+                    metadata={
+                        "num_episodes": num_episodes,
+                        "stream_frames": stream_frames,
+                        "target_fps": target_fps,
+                    },
+                )
+
+                # Create and run evaluator
+                runner = EvaluationRunner(
+                    run_id=run_id,
+                    env_id=config.get("env_id"),
+                    algorithm=config.get("algorithm"),
+                    num_episodes=num_episodes,
+                    seed=config.get("seed"),
+                    stop_flag=stop_event.is_set,
+                    stream_frames=stream_frames,
+                    target_fps=target_fps,
+                    verbose=1,
+                )
+
+                summary = runner.run()
+
+                # Log evaluation completed
+                events_repository.create_event(
+                    run_id=run_id,
+                    event_type=EventType.EVALUATION_COMPLETED,
+                    message=(f"Evaluation completed: {summary.num_episodes} episodes, "
+                             f"mean reward: {summary.mean_reward:.2f}"),
+                    metadata=summary.to_dict(),
+                )
+
+                # Restore previous status
+                runs_repository.update_run_status(
+                    run_id=run_id,
+                    status=RunStatus(previous_status),
+                )
+
+            except Exception as e:
+                # Handle errors
+                events_repository.create_event(
+                    run_id=run_id,
+                    event_type=EventType.ERROR,
+                    message=f"Evaluation failed: {str(e)}",
+                )
+                # Restore previous status on error
+                runs_repository.update_run_status(
+                    run_id=run_id,
+                    status=RunStatus(previous_status),
+                )
+
+            finally:
+                # Cleanup job from active jobs
+                with self._jobs_lock:
+                    if run_id in self._eval_jobs:
+                        del self._eval_jobs[run_id]
+
+        # Create thread
+        thread = threading.Thread(
+            target=evaluation_thread,
+            name=f"eval-{run_id[:8]}",
+            daemon=True,
+        )
+        job.thread = thread
+
+        # Register job
+        with self._jobs_lock:
+            self._eval_jobs[run_id] = job
+
+        # Start evaluation
+        thread.start()
+
+        return {
+            "success": True,
+            "message": f"Evaluation started: {num_episodes} episodes",
+        }
+
+    def stop_evaluation(self, run_id: str) -> Dict[str, Any]:
+        """
+        Stop evaluation for a run.
+
+        Args:
+            run_id: The run ID to stop evaluation for
+
+        Returns:
+            Dict with success status and message
+        """
+        with self._jobs_lock:
+            job = self._eval_jobs.get(run_id)
+
+        if job is None:
+            # Check if run exists and is in evaluating status
+            run_dict = runs_repository.get_run(run_id)
+            if not run_dict:
+                return {
+                    "success": False,
+                    "error": "Run not found",
+                }
+            if run_dict["status"] != RunStatus.EVALUATING.value:
+                return {
+                    "success": False,
+                    "error": (f"Run is not currently being evaluated "
+                              f"(status: {run_dict['status']})"),
+                }
+            return {
+                "success": False,
+                "error": "Evaluation job not found in memory",
+            }
+
+        if not job.thread.is_alive():
+            return {
+                "success": False,
+                "error": "Evaluation thread is not active",
+            }
+
+        # Signal stop
+        job.stop_event.set()
+
+        # Log stop request
+        events_repository.create_event(
+            run_id=run_id,
+            event_type=EventType.INFO,
+            message="Evaluation stop requested by user",
+        )
+
+        return {
+            "success": True,
+            "message": "Stop signal sent, evaluation will stop after current episode",
+        }
+
+    def cleanup(self) -> None:
+        """Stop all active training and evaluation jobs."""
+        with self._jobs_lock:
+            # Stop training jobs
             for run_id, job in list(self._jobs.items()):
+                if job.thread.is_alive():
+                    job.stop_event.set()
+            # Stop evaluation jobs
+            for run_id, job in list(self._eval_jobs.items()):
                 if job.thread.is_alive():
                     job.stop_event.set()
 
