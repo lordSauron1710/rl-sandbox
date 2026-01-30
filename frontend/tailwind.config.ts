@@ -9,32 +9,34 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Neutral palette
+        // Surface colors
         surface: {
           DEFAULT: '#FFFFFF',
-          secondary: '#F8F9FA',
+          secondary: '#FAFAFA',
           tertiary: '#F1F3F4',
         },
+        // Border colors
         border: {
-          DEFAULT: '#E5E7EB',
+          DEFAULT: '#E5E5E5',
           light: '#F3F4F6',
         },
+        // Text colors
         text: {
-          primary: '#111827',
-          secondary: '#6B7280',
+          primary: '#000000',
+          secondary: '#666666',
           muted: '#9CA3AF',
         },
         // Accent colors
         accent: {
-          primary: '#111827',
+          primary: '#000000',
           danger: '#DC2626',
           success: '#16A34A',
           warning: '#F59E0B',
         },
       },
       fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Fira Code', 'SFMono-Regular', 'Consolas', 'monospace'],
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
       },
       fontSize: {
         'xs': ['0.75rem', { lineHeight: '1rem' }],
@@ -47,8 +49,13 @@ const config: Config = {
         'metric': ['2rem', { lineHeight: '2.5rem', fontWeight: '600' }],
       },
       spacing: {
-        'sidebar': '260px',
+        'sidebar': '280px',
         'sidebar-right': '320px',
+      },
+      borderRadius: {
+        'sm': '4px',
+        'DEFAULT': '8px',
+        'pill': '999px',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

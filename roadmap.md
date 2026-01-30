@@ -219,7 +219,7 @@ Add endpoints to retrieve artifacts and serve eval MP4s.
 ---
 
 ### Prompt 09 — Next.js scaffold + 3-column layout shell
-// NOT STARTED
+// EXECUTED
 
 Create the Next.js frontend scaffold with the 3-column dashboard layout.
 
@@ -248,7 +248,7 @@ Implement the left sidebar with environment selection and training configuration
 
 **Requirements:**
 - Environment Select section:
-  - List of environments as selectable cards
+  - List of environments as selectable cards (fetched from backend API)
   - Each card shows: Name, ID badge, action space (DISCRETE/CONTINUOUS), observation space (BOX with dimensions)
   - Environments: LunarLander-v2, CartPole-v1, BipedalWalker-v3
   - Selected state styling
@@ -259,12 +259,15 @@ Implement the left sidebar with environment selection and training configuration
 - Action buttons:
   - TRAIN button (primary, filled)
   - TEST button (secondary, outlined)
+  - **Loading state with animated progress ring/spinner around buttons while waiting for backend response**
+  - Disabled state while operation is in progress
 
 **Output:**
 - EnvironmentCard component
 - HyperparametersForm component
 - Form state management
 - API integration for starting training/testing
+- **LoadingButton component with circular progress indicator**
 
 ---
 
