@@ -4,8 +4,8 @@ This folder contains documentation for the RL Gym Visualizer project.
 
 ## Contents
 
-- [API Contract](./api-contract.md) *(coming soon)*
-- [Data Model](./data-model.md) *(coming soon)*
+- [API Contract](./api-contract.md) — REST + SSE/WebSocket API specification
+- [Data Model](./data-model.md) — SQLite schema and on-disk storage layout
 - [Architecture](./architecture.md) *(coming soon)*
 
 ## Quick Links

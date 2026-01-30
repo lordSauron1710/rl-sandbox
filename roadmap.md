@@ -53,7 +53,7 @@ Design the run storage layout and SQLite schema for experiments.
 ---
 
 ### Prompt 03 — API contract (REST + SSE)
-// NOT STARTED
+// EXECUTED
 
 Define the minimal backend API contract for v0 using REST + SSE.
 
