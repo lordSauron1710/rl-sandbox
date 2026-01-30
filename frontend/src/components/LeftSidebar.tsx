@@ -23,6 +23,8 @@ interface LeftSidebarProps {
   isTraining?: boolean
   isTesting?: boolean
   isCreatingRun?: boolean
+  /** When true, TEST is disabled (no trained run available). */
+  hasTrainedRun?: boolean
 }
 
 export function LeftSidebar({
@@ -42,6 +44,7 @@ export function LeftSidebar({
   isTraining = false,
   isTesting = false,
   isCreatingRun = false,
+  hasTrainedRun = false,
 }: LeftSidebarProps) {
   // Determine available algorithms based on selected environment
   const selectedEnv = environments.find((e) => e.id === selectedEnvId)
@@ -132,7 +135,8 @@ export function LeftSidebar({
             onClick={onTest}
             isLoading={isTesting}
             loadingText="Testing..."
-            disabled={!selectedEnvId || isOperationInProgress}
+            disabled={!selectedEnvId || isOperationInProgress || !hasTrainedRun}
+            title={!hasTrainedRun ? 'Train first to get a model, then test' : undefined}
           >
             TEST
           </LoadingButton>

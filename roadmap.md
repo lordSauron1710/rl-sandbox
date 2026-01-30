@@ -303,21 +303,24 @@ Implement the center panel with live visualization and training metrics.
   - Custom canvas-based implementation
 
 **Additional Features Implemented:**
-- **Stop Training Button:** Hover over TRAIN button while training to reveal red STOP button
-- **Progress Bar Animation:** Glowing gradient fill that sweeps across button during loading
-- **Reset Functionality:** Clears analysis insights and returns to preview state
-- **Insight State Management:** Analysis section only appears after training progresses
+- **Stop Training Button:** Shown as its own red button whenever training is running (replaces TRAIN; no hover)
+- **Progress Bar Animation:** Glowing gradient fill / loading state on TRAIN during create+start
+- **Reset Functionality:** Clears metrics, reward history, analysis insight; disconnects streams; returns to preview state
+- **Insight State Management:** Analysis section only appears after training progresses (e.g. episode > 10)
+- **TEST button state:** Disabled when no run exists (`hasTrainedRun`); tooltip "Train first to get a model, then test"
+- **Evaluation API:** Frontend sends `num_episodes`, `stream_frames`, `target_fps` to match backend `EvaluationRequest`
 
 **Output:**
-- LiveFeed component with video/stream display
-- **EnvironmentPreview component** for idle state display
-- MetricsRow component (4 metric cards)
-- RewardHistoryChart component with hover tooltips
-- SSE client for real-time metric updates
-- WebSocket client for real-time frame streaming
-- **Backend: Environment preview endpoint**
-- **Backend: Frame streaming with callback**
-- **Stop training functionality**
+- LiveFeed component with video/stream display and idle-state preview (img from `GET /environments/{id}/preview`)
+- MetricsRow (4 metric cards: Mean Reward, Eps Length, Loss, FPS)
+- RewardHistoryChart with hover tooltips (episode number, reward value); last 100 episodes
+- SSE client (useMetricsStream) and WebSocket client (useLiveFrames) for real-time metrics and frames
+- **Backend:** `GET /environments/{env_id}/preview` returns single JPEG frame (Gymnasium rgb_array)
+- **Backend:** Frame streaming via callback (MetricsCallback) and pubsub; SSE metrics and WebSocket frames routers
+- **Backend:** Stop training (`POST /runs/{id}/stop`)
+- **Docs:** `docs/prompt-11-analysis-and-tests.md` — requirements vs implementation, feature matrix, how to run tests
+- **CI smoke test:** `test-smoke.sh` — minimal backend check (health, list envs, create run, start, stop; no long sleeps, no preview)
+- **Makefile:** `make test-smoke` (smoke), `make test` (full `test-comprehensive.sh`)
 
 ---
 

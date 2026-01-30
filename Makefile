@@ -10,6 +10,8 @@ help:
 	@echo "  make dev        Start both backend and frontend in development mode"
 	@echo "  make backend    Start only the backend server"
 	@echo "  make frontend   Start only the frontend server"
+	@echo "  make test-smoke Run minimal backend smoke test (CI; requires backend up)"
+	@echo "  make test       Run full backend test (requires backend up)"
 	@echo "  make clean      Remove generated files and caches"
 	@echo ""
 
@@ -38,6 +40,15 @@ backend:
 frontend:
 	@echo "Starting frontend server..."
 	cd frontend && npm run dev
+
+# Tests (backend must be running)
+test-smoke:
+	@echo "Running backend smoke test (CI)..."
+	@bash test-smoke.sh
+
+test:
+	@echo "Running full backend test..."
+	@bash test-comprehensive.sh
 
 # Cleanup
 clean:

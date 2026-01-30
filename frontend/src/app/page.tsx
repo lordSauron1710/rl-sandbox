@@ -314,6 +314,7 @@ export default function Home() {
           isTraining={isTraining}
           isTesting={isTesting}
           isCreatingRun={isCreating}
+          hasTrainedRun={!!currentRun}
         />
 
         {/* Center Panel */}
