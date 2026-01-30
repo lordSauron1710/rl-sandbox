@@ -2,10 +2,12 @@
 Run endpoints for RL Gym Visualizer.
 """
 import json
+import re
 from typing import Optional, List, Any
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.db import runs_repository, events_repository
@@ -14,6 +16,9 @@ from app.models.event import EventType
 from app.models.environment import get_environment
 from app.storage.run_storage import RunStorage
 from app.training import get_training_manager
+
+# UUID v4 pattern for run_id validation (path traversal prevention)
+UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -119,9 +124,80 @@ class ErrorResponse(BaseModel):
     error: ErrorDetail
 
 
+class RunConfigResponse(BaseModel):
+    """Response schema for run configuration artifact."""
+    env_id: str
+    algorithm: str
+    hyperparameters: dict
+    seed: Optional[int] = None
+
+
+class MetricEntry(BaseModel):
+    """Single metric entry from training."""
+    episode: int
+    reward: float
+    length: int
+    loss: Optional[float] = None
+    fps: int
+    timestep: int
+    timestamp: str
+
+
+class MetricsResponse(BaseModel):
+    """Response schema for metrics artifact."""
+    run_id: str
+    total_entries: int
+    metrics: List[dict]
+
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+def _validate_run_id_format(run_id: str) -> None:
+    """
+    Validate that run_id is a valid UUID format.
+    
+    This prevents path traversal attacks by ensuring run_id cannot contain
+    directory traversal sequences like '../' or other malicious patterns.
+    
+    Raises HTTPException if the format is invalid.
+    """
+    if not UUID_PATTERN.match(run_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "invalid_run_id",
+                    "message": "Invalid run ID format. Expected UUID.",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+
+
+def _get_validated_run(run_id: str) -> dict:
+    """
+    Validate run_id format and retrieve the run from database.
+    
+    Raises HTTPException if run_id is invalid or run not found.
+    """
+    _validate_run_id_format(run_id)
+    
+    run_dict = runs_repository.get_run(run_id)
+    if not run_dict:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "not_found",
+                    "message": "Run not found",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    return run_dict
+
 
 def _build_run_response(run_dict: dict) -> RunResponse:
     """Build a RunResponse from a database row."""
@@ -515,6 +591,230 @@ async def list_events(
         ],
         total=total,
     )
+
+
+# ============================================================================
+# Artifact Endpoints (Prompt 08)
+# ============================================================================
+
+@router.get("/{run_id}/artifacts/config", response_model=RunConfigResponse)
+async def get_run_config(run_id: str) -> RunConfigResponse:
+    """
+    Get the configuration used for a specific run.
+    
+    Returns the environment, algorithm, hyperparameters, and seed
+    that were used when the run was created.
+    """
+    run_dict = _get_validated_run(run_id)
+    
+    storage = RunStorage(run_id)
+    config = storage.load_config()
+    
+    if not config:
+        # Fall back to config_json in database
+        config = json.loads(run_dict["config_json"])
+    
+    return RunConfigResponse(
+        env_id=config.get("env_id", run_dict["env_id"]),
+        algorithm=config.get("algorithm", run_dict["algorithm"]),
+        hyperparameters=config.get("hyperparameters", {}),
+        seed=config.get("seed"),
+    )
+
+
+@router.get("/{run_id}/artifacts/metrics", response_model=MetricsResponse)
+async def get_run_metrics(
+    run_id: str,
+    tail: Optional[int] = Query(None, ge=1, le=10000, description="Return only the last N metrics"),
+) -> MetricsResponse:
+    """
+    Get training metrics for a specific run.
+    
+    Metrics are returned in chronological order. Use the `tail` parameter
+    to retrieve only the most recent N entries (useful for large runs).
+    
+    **Metric fields:**
+    - episode: Episode number
+    - reward: Total reward for the episode
+    - length: Number of steps in the episode
+    - loss: Training loss (may be null early in training)
+    - fps: Frames/steps per second
+    - timestep: Total timesteps at time of recording
+    - timestamp: ISO timestamp when metric was recorded
+    """
+    _get_validated_run(run_id)
+    
+    storage = RunStorage(run_id)
+    
+    if not storage.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "storage_not_found",
+                    "message": "Run storage not found",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    total_entries = storage.get_metrics_count()
+    metrics = storage.get_metrics(tail=tail)
+    
+    return MetricsResponse(
+        run_id=run_id,
+        total_entries=total_entries,
+        metrics=metrics,
+    )
+
+
+@router.get("/{run_id}/artifacts/eval/latest.mp4")
+async def get_latest_eval_video(run_id: str) -> FileResponse:
+    """
+    Get the latest evaluation video for a run.
+    
+    Returns an MP4 file of the most recent evaluation run.
+    Videos are recorded during evaluation at up to 720p resolution.
+    
+    **Note:** Only the 3 most recent evaluation videos are retained per run.
+    """
+    _get_validated_run(run_id)
+    
+    storage = RunStorage(run_id)
+    video_path = storage.get_latest_eval_video()
+    
+    if not video_path or not video_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "video_not_found",
+                    "message": "No evaluation video found for this run",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    # Verify the video is within the expected directory (defense in depth)
+    try:
+        video_path.resolve().relative_to(storage.eval_dir.resolve())
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": {
+                    "code": "access_denied",
+                    "message": "Access to this file is not permitted",
+                    "details": {}
+                }
+            }
+        )
+    
+    return FileResponse(
+        path=str(video_path),
+        media_type="video/mp4",
+        filename=video_path.name,
+        headers={
+            "Content-Disposition": f'inline; filename="{video_path.name}"',
+            "Cache-Control": "public, max-age=3600",
+        }
+    )
+
+
+@router.get("/{run_id}/artifacts/eval/{filename}")
+async def get_eval_video_by_name(run_id: str, filename: str) -> FileResponse:
+    """
+    Get a specific evaluation video by filename.
+    
+    Returns an MP4 file with the specified filename from the evaluation directory.
+    
+    **Valid filenames:** eval_<timestamp>.mp4 (e.g., eval_2026-01-30T12-34-56.mp4)
+    """
+    _get_validated_run(run_id)
+    
+    # Validate filename format to prevent path traversal
+    if not re.match(r"^eval_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.mp4$", filename):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "invalid_filename",
+                    "message": "Invalid video filename format",
+                    "details": {"filename": filename, "expected_format": "eval_YYYY-MM-DDTHH-MM-SS.mp4"}
+                }
+            }
+        )
+    
+    storage = RunStorage(run_id)
+    video_path = storage.eval_dir / filename
+    
+    if not video_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "video_not_found",
+                    "message": "Evaluation video not found",
+                    "details": {"run_id": run_id, "filename": filename}
+                }
+            }
+        )
+    
+    # Verify the video is within the expected directory (defense in depth)
+    try:
+        video_path.resolve().relative_to(storage.eval_dir.resolve())
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": {
+                    "code": "access_denied",
+                    "message": "Access to this file is not permitted",
+                    "details": {}
+                }
+            }
+        )
+    
+    return FileResponse(
+        path=str(video_path),
+        media_type="video/mp4",
+        filename=filename,
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "public, max-age=3600",
+        }
+    )
+
+
+@router.get("/{run_id}/artifacts/eval-summary")
+async def get_eval_summary_artifact(run_id: str) -> dict:
+    """
+    Get the latest evaluation summary for a run (alias endpoint).
+    
+    This is an alternative path for accessing evaluation summaries.
+    The primary endpoint is GET /runs/{run_id}/evaluate/latest.
+    
+    Returns statistics from the most recent evaluation including
+    mean reward, episode lengths, and termination rates.
+    """
+    _get_validated_run(run_id)
+    
+    storage = RunStorage(run_id)
+    summary = storage.get_latest_eval()
+    
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "summary_not_found",
+                    "message": "No evaluation summary found for this run",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+    
+    return summary
 
 
 # ============================================================================

@@ -181,7 +181,7 @@ Implement evaluation for a trained policy with live visualization support.
 ---
 
 ### Prompt 08 — Artifact endpoints + static file serving
-// NOT STARTED
+// EXECUTED
 
 Add endpoints to retrieve artifacts and serve eval MP4s.
 

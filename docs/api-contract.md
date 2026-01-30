@@ -362,7 +362,7 @@ GET /runs/{run_id}/evaluation
 
 ### Get Run Config
 
-Returns the run configuration.
+Returns the run configuration used when the run was created.
 
 ```
 GET /runs/{run_id}/artifacts/config
@@ -376,18 +376,24 @@ GET /runs/{run_id}/artifacts/config
   "algorithm": "PPO",
   "hyperparameters": {
     "learning_rate": 0.0003,
-    "total_timesteps": 1000000
+    "total_timesteps": 1000000,
+    "batch_size": 64,
+    "n_steps": 2048,
+    "gamma": 0.99
   },
-  "seed": 42,
-  "device": "auto"
+  "seed": 42
 }
 ```
+
+**Errors:**
+- `400 Bad Request` — Invalid run_id format
+- `404 Not Found` — Run not found
 
 ---
 
 ### Get Metrics
 
-Returns metrics from the metrics JSONL file.
+Returns training metrics from the metrics JSONL file.
 
 ```
 GET /runs/{run_id}/artifacts/metrics
@@ -397,13 +403,14 @@ GET /runs/{run_id}/artifacts/metrics
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `tail` | int | — | Return only last N entries |
-| `since_episode` | int | — | Return entries after this episode |
+| `tail` | int | — | Return only last N entries (1-10000) |
 
 **Response:** `200 OK`
 
 ```json
 {
+  "run_id": "550e8400-e29b-41d4-a716-446655440000",
+  "total_entries": 100,
   "metrics": [
     {
       "episode": 1,
@@ -411,6 +418,7 @@ GET /runs/{run_id}/artifacts/metrics
       "length": 89,
       "loss": null,
       "fps": 142,
+      "timestep": 89,
       "timestamp": "2026-01-29T10:00:01.234Z"
     },
     {
@@ -419,30 +427,93 @@ GET /runs/{run_id}/artifacts/metrics
       "length": 102,
       "loss": 0.0342,
       "fps": 148,
+      "timestep": 191,
       "timestamp": "2026-01-29T10:00:02.456Z"
     }
-  ],
-  "total_episodes": 100
+  ]
 }
 ```
 
+**Errors:**
+- `400 Bad Request` — Invalid run_id format
+- `404 Not Found` — Run or storage not found
+
 ---
 
-### Get Evaluation Video
+### Get Evaluation Video (Latest)
 
-Serves the evaluation video file.
+Serves the latest evaluation video file.
 
 ```
 GET /runs/{run_id}/artifacts/eval/latest.mp4
-GET /runs/{run_id}/artifacts/eval/{filename}
 ```
 
 **Response:** `200 OK`
 - Content-Type: `video/mp4`
-- Supports range requests for video seeking
+- Content-Disposition: `inline; filename="eval_<timestamp>.mp4"`
+- Cache-Control: `public, max-age=3600`
 
 **Errors:**
+- `400 Bad Request` — Invalid run_id format
+- `403 Forbidden` — Access denied (path traversal attempt)
 - `404 Not Found` — Video not found
+
+---
+
+### Get Evaluation Video (by Filename)
+
+Serves a specific evaluation video by filename.
+
+```
+GET /runs/{run_id}/artifacts/eval/{filename}
+```
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `filename` | string | Video filename (format: `eval_YYYY-MM-DDTHH-MM-SS.mp4`) |
+
+**Response:** `200 OK`
+- Content-Type: `video/mp4`
+- Content-Disposition: `inline; filename="{filename}"`
+- Cache-Control: `public, max-age=3600`
+
+**Errors:**
+- `400 Bad Request` — Invalid run_id or filename format
+- `403 Forbidden` — Access denied (path traversal attempt)
+- `404 Not Found` — Video not found
+
+---
+
+### Get Evaluation Summary (Artifact Alias)
+
+Returns the latest evaluation summary. This is an alias for `GET /runs/{run_id}/evaluate/latest`.
+
+```
+GET /runs/{run_id}/artifacts/eval-summary
+```
+
+**Response:** `200 OK`
+
+```json
+{
+  "num_episodes": 5,
+  "mean_reward": 204.2,
+  "std_reward": 45.8,
+  "min_reward": 112.5,
+  "max_reward": 267.3,
+  "mean_length": 302,
+  "std_length": 58,
+  "termination_rate": 0.8,
+  "video_path": "/path/to/runs/<id>/eval/eval_2026-01-29T11-03-00.mp4",
+  "timestamp": "2026-01-29T11:03:00.000Z"
+}
+```
+
+**Errors:**
+- `400 Bad Request` — Invalid run_id format
+- `404 Not Found` — Run or evaluation summary not found
 
 ---
 
