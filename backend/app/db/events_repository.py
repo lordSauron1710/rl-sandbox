@@ -7,6 +7,7 @@ from typing import Optional, List
 
 from app.db.database import get_connection, dict_from_row
 from app.models.event import EventType
+from app.streaming.pubsub import get_events_pubsub
 
 
 def create_event(
@@ -42,7 +43,24 @@ def create_event(
         
         event_id = cursor.lastrowid
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
-        return dict_from_row(row)
+        event_dict = dict_from_row(row)
+        
+        # Publish to streaming subscribers
+        try:
+            pubsub = get_events_pubsub()
+            pubsub.publish_event(
+                run_id=run_id,
+                event_id=event_id,
+                timestamp=now,
+                event_type=event_type.value,
+                message=message,
+                metadata=metadata,
+            )
+        except Exception:
+            # Don't fail event creation if pubsub fails
+            pass
+        
+        return event_dict
 
 
 def get_event(event_id: int) -> Optional[dict]:

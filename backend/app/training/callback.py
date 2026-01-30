@@ -5,8 +5,12 @@ This callback is responsible for:
 - Writing metrics to JSONL as training progresses
 - Tracking episode rewards, lengths, loss, and FPS
 - Supporting training interruption via stop flag
+- Publishing metrics to streaming pub/sub for real-time updates
+- Optionally rendering and publishing frames
 """
 import time
+import base64
+import io
 from datetime import datetime, timezone
 from typing import Optional, Callable, Any, Dict
 import numpy as np
@@ -14,6 +18,7 @@ import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 
 from app.storage.run_storage import RunStorage
+from app.streaming.pubsub import get_metrics_pubsub, get_frames_pubsub
 
 
 class MetricsCallback(BaseCallback):
@@ -46,6 +51,9 @@ class MetricsCallback(BaseCallback):
         on_progress: Optional[Callable[[int, int], None]] = None,
         log_interval: int = 1,  # Log every N episodes
         verbose: int = 0,
+        enable_frame_streaming: bool = False,
+        frame_fps: int = 15,
+        frame_quality: int = 75,
     ):
         """
         Initialize the metrics callback.
@@ -57,6 +65,9 @@ class MetricsCallback(BaseCallback):
             on_progress: Optional callback for progress updates (current, total)
             log_interval: How often to log metrics (every N episodes)
             verbose: Verbosity level
+            enable_frame_streaming: Whether to stream rendered frames
+            frame_fps: Target FPS for frame streaming (10-15 for training)
+            frame_quality: JPEG quality for frame encoding (1-100)
         """
         super().__init__(verbose)
         self.run_id = run_id
@@ -66,6 +77,10 @@ class MetricsCallback(BaseCallback):
         self.log_interval = log_interval
 
         self.storage = RunStorage(run_id)
+
+        # Pub/sub for real-time streaming
+        self.metrics_pubsub = get_metrics_pubsub()
+        self.frames_pubsub = get_frames_pubsub()
 
         # Episode tracking
         self.episode_count = 0
@@ -79,6 +94,19 @@ class MetricsCallback(BaseCallback):
 
         # Loss tracking (from model's logger)
         self.last_loss: Optional[float] = None
+
+        # Frame streaming settings
+        self.enable_frame_streaming = enable_frame_streaming
+        self.frame_fps = frame_fps
+        self.frame_quality = frame_quality
+        self.last_frame_time: float = 0
+        self.frame_interval = 1.0 / frame_fps
+        self.current_episode_reward: float = 0.0
+        self.current_step_in_episode: int = 0
+
+        # Set target FPS for frames pubsub
+        if enable_frame_streaming:
+            self.frames_pubsub.set_target_fps(run_id, frame_fps)
 
     def _init_callback(self) -> bool:
         """Initialize callback at training start."""
@@ -98,7 +126,21 @@ class MetricsCallback(BaseCallback):
         if self.stop_flag():
             if self.verbose > 0:
                 print(f"[MetricsCallback] Stop requested at step {self.num_timesteps}")
+            # Notify subscribers of stop
+            self.metrics_pubsub.publish_training_complete(
+                self.run_id,
+                final_episode=self.episode_count,
+                total_timesteps=self.num_timesteps,
+                status="stopped",
+            )
+            self.frames_pubsub.publish_end(self.run_id, "training_stopped")
             return False
+
+        # Track step reward for frame metadata
+        rewards = self.locals.get("rewards", [])
+        if len(rewards) > 0:
+            self.current_episode_reward += rewards[0]
+        self.current_step_in_episode += 1
 
         # Check for completed episodes in info
         # SB3 stores episode info in 'infos' for vectorized envs
@@ -117,6 +159,14 @@ class MetricsCallback(BaseCallback):
                 if self.episode_count % self.log_interval == 0:
                     self._log_metrics(ep_reward, ep_length)
 
+                # Reset episode tracking
+                self.current_episode_reward = 0.0
+                self.current_step_in_episode = 0
+
+        # Stream frame if enabled and enough time has passed
+        if self.enable_frame_streaming:
+            self._maybe_stream_frame()
+
         # Progress callback
         if self.on_progress:
             self.on_progress(self.num_timesteps, self.total_timesteps)
@@ -124,7 +174,7 @@ class MetricsCallback(BaseCallback):
         return True
 
     def _log_metrics(self, reward: float, length: int) -> None:
-        """Log metrics to JSONL file."""
+        """Log metrics to JSONL file and publish to streaming subscribers."""
         current_time = time.time()
 
         # Calculate FPS
@@ -135,6 +185,8 @@ class MetricsCallback(BaseCallback):
         # Try to get loss from model's logger
         loss = self._get_loss_from_logger()
 
+        timestamp = datetime.now(timezone.utc).isoformat()
+
         # Build metric entry
         metric = {
             "episode": self.episode_count,
@@ -143,11 +195,23 @@ class MetricsCallback(BaseCallback):
             "loss": loss,
             "fps": fps,
             "timestep": self.num_timesteps,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": timestamp,
         }
 
         # Append to JSONL
         self.storage.append_metric(metric)
+
+        # Publish to streaming subscribers (with throttling)
+        self.metrics_pubsub.publish_metric(
+            run_id=self.run_id,
+            episode=self.episode_count,
+            reward=float(reward),
+            length=int(length),
+            loss=loss,
+            fps=fps,
+            timestep=self.num_timesteps,
+            timestamp=timestamp,
+        )
 
         # Update tracking
         self.last_log_time = current_time
@@ -175,12 +239,68 @@ class MetricsCallback(BaseCallback):
             pass
         return self.last_loss
 
+    def _maybe_stream_frame(self) -> None:
+        """Stream a rendered frame if enough time has elapsed."""
+        current_time = time.time()
+        if current_time - self.last_frame_time < self.frame_interval:
+            return  # Not enough time has passed
+
+        # Check if there are subscribers
+        if self.frames_pubsub.get_subscriber_count(self.run_id) == 0:
+            return  # No subscribers, skip rendering
+
+        try:
+            # Get the environment from the model
+            env = self.training_env
+            if env is None:
+                return
+
+            # Render the frame
+            frame = env.render()
+            if frame is None:
+                return
+
+            # Encode frame to base64 JPEG
+            from PIL import Image
+            img = Image.fromarray(frame)
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=self.frame_quality)
+            frame_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+            # Publish frame
+            self.frames_pubsub.publish_frame(
+                run_id=self.run_id,
+                frame_data=frame_data,
+                episode=self.episode_count,
+                step=self.current_step_in_episode,
+                reward=self.current_episode_reward,
+                total_reward=float(np.mean(self.episode_rewards)) if self.episode_rewards else 0.0,
+            )
+
+            self.last_frame_time = current_time
+
+        except Exception as e:
+            if self.verbose > 0:
+                print(f"[MetricsCallback] Frame streaming error: {e}")
+
     def _on_training_end(self) -> None:
         """Called at the end of training."""
         if self.verbose > 0:
             total_time = time.time() - (self.start_time or time.time())
             print(f"[MetricsCallback] Training ended. "
                   f"Episodes: {self.episode_count}, Time: {total_time:.1f}s")
+
+        # Flush any pending metrics
+        self.metrics_pubsub.flush_pending(self.run_id)
+
+        # Notify subscribers of completion
+        self.metrics_pubsub.publish_training_complete(
+            self.run_id,
+            final_episode=self.episode_count,
+            total_timesteps=self.num_timesteps,
+            status="completed",
+        )
+        self.frames_pubsub.publish_end(self.run_id, "training_complete")
 
     def get_summary(self) -> Dict[str, Any]:
         """Get a summary of training progress."""

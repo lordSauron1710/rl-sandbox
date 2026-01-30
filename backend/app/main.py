@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.database import init_db
 from app.routers import environments_router, runs_router
+from app.streaming import streaming_router
 
 
 @asynccontextmanager
@@ -38,6 +39,7 @@ app.add_middleware(
 # Include API routers with /api/v1 prefix
 app.include_router(environments_router, prefix="/api/v1")
 app.include_router(runs_router, prefix="/api/v1")
+app.include_router(streaming_router, prefix="/api/v1")
 
 
 @app.get("/health")

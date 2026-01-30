@@ -129,7 +129,7 @@ Implement an in-process training runner for Stable-Baselines3.
 ---
 
 ### Prompt 06 — Metrics streaming (SSE) + Live frames
-// NOT STARTED
+// EXECUTED
 
 Implement SSE metrics streaming and optional live frame streaming for a run.
 
