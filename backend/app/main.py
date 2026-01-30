@@ -2,10 +2,13 @@
 RL Gym Visualizer - FastAPI Backend
 """
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.database import init_db
+from app.routers import environments_router, runs_router
 
 
 @asynccontextmanager
@@ -32,14 +35,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include API routers with /api/v1 prefix
+app.include_router(environments_router, prefix="/api/v1")
+app.include_router(runs_router, prefix="/api/v1")
+
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.1.0"}
+    return {
+        "status": "healthy",
+        "version": "0.1.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {"message": "RL Gym Visualizer API", "docs": "/docs"}
+    return {
+        "message": "RL Gym Visualizer API",
+        "version": "0.1.0",
+        "docs": "/docs",
+        "api_base": "/api/v1",
+    }

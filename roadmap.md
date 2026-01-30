@@ -86,7 +86,7 @@ Define the minimal backend API contract for v0 using REST + SSE.
 ---
 
 ### Prompt 04 — FastAPI backend skeleton
-// NOT STARTED
+// EXECUTED
 
 Implement the FastAPI backend skeleton.
 

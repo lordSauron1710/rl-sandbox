@@ -16,8 +16,23 @@ A lightweight web application for visualizing reinforcement learning training an
 rl-sandbox/
 ├── backend/                    # FastAPI backend
 │   ├── app/
-│   │   ├── __init__.py
+│   │   ├── db/                 # Database layer
+│   │   │   ├── database.py     # SQLite connection
+│   │   │   ├── schema.sql      # DB schema
+│   │   │   ├── runs_repository.py
+│   │   │   └── events_repository.py
+│   │   ├── models/             # Pydantic models
+│   │   │   ├── environment.py
+│   │   │   ├── event.py
+│   │   │   └── run.py
+│   │   ├── routers/            # API endpoints
+│   │   │   ├── environments.py
+│   │   │   └── runs.py
+│   │   ├── storage/            # File storage
+│   │   │   └── run_storage.py
 │   │   └── main.py
+│   ├── data/                   # SQLite database (created on startup)
+│   ├── runs/                   # Run artifacts (created per run)
 │   └── requirements.txt
 ├── frontend/                   # Next.js frontend
 │   ├── src/
@@ -27,16 +42,12 @@ rl-sandbox/
 │   │   │   └── globals.css
 │   │   └── components/
 │   │       └── layout/         # 3-column layout components
-│   │           ├── Header.tsx
-│   │           ├── LeftSidebar.tsx
-│   │           ├── CenterPanel.tsx
-│   │           ├── RightSidebar.tsx
-│   │           └── MobileNav.tsx
 │   ├── package.json
 │   └── tailwind.config.ts
 ├── docs/                       # Documentation
+│   ├── api-contract.md         # API specification
+│   ├── data-model.md           # Data model docs
 │   └── assets/
-│       └── frontend-design-reference.png
 ├── Makefile                    # Dev scripts
 └── README.md
 ```
@@ -105,6 +116,23 @@ make frontend
 - **Frontend:** http://localhost:3000
 - **Backend API:** http://localhost:8000
 - **API Docs:** http://localhost:8000/docs
+
+## API Endpoints
+
+Base URL: `http://localhost:8000/api/v1`
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/environments` | GET | List supported environments |
+| `/runs` | GET | List all runs |
+| `/runs` | POST | Create a new run |
+| `/runs/{id}` | GET | Get run details |
+| `/runs/{id}/start` | POST | Start training |
+| `/runs/{id}/stop` | POST | Stop training |
+| `/runs/{id}/events` | GET | List run events |
+| `/health` | GET | Health check |
+
+See [docs/api-contract.md](./docs/api-contract.md) for full API documentation.
 
 ## Development
 
