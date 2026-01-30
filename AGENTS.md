@@ -6,6 +6,38 @@ This file provides guidance for AI agents working in this repository.
 
 This repository contains the development of an **RL Gym Visualizer** - a lightweight web application for visualizing reinforcement learning training and evaluation using Gymnasium and Stable-Baselines3.
 
+## Deployment Target
+
+**Goal:** Lightweight webapp deployable to Vercel (frontend) with a separate backend.
+
+### Architecture for Deployment
+
+```
+┌─────────────────┐         ┌─────────────────────────┐
+│   Vercel        │         │   Backend Host          │
+│   (Frontend)    │ ◄─────► │   (Railway/Fly.io/VPS)  │
+│                 │   API   │                         │
+│   Next.js       │   SSE   │   FastAPI + Gymnasium   │
+│   Static/SSR    │   WS    │   + Stable-Baselines3   │
+└─────────────────┘         └─────────────────────────┘
+```
+
+**Why split deployment?**
+- Vercel serverless functions have 10-60s timeout limits
+- RL training runs for minutes/hours (not compatible with serverless)
+- Backend requires heavy compute (PyTorch, Gymnasium rendering)
+- Frontend is static/SSR and deploys perfectly on Vercel
+
+**Backend hosting options:** Railway, Fly.io, Render, or self-hosted VPS
+
+### Key Architectural Decisions
+
+1. **Frontend must work independently** - Handle API unavailability gracefully with fallbacks
+2. **API URL must be configurable** - Use `NEXT_PUBLIC_API_URL` environment variable
+3. **CORS must be configured** - Backend allows requests from Vercel frontend domain
+4. **Keep frontend bundle small** - No heavy dependencies in Next.js
+5. **SSE/WebSocket for real-time** - Streaming metrics and frames from backend
+
 ## Key Files
 
 - `roadmap.md` - Contains the development prompts for building the v0 MVP
@@ -71,7 +103,10 @@ See `docs/assets/frontend-design-reference.png` for the target UI design.
 ## Development Principles
 
 - Focus on clarity over feature breadth
-- Keep the implementation lightweight
-- Server-side rendering for video/frames
-- No cloud or authentication for v0
-- Assume single developer machine deployment
+- Keep the implementation lightweight and deployable
+- **Frontend:** Optimized for Vercel (small bundle, static where possible)
+- **Backend:** Stateless API design (no server-side sessions)
+- Server-side streaming for video/frames (SSE + WebSocket)
+- No authentication for v0
+- Environment variables for all configuration (API URLs, etc.)
+- Graceful degradation when backend is unavailable
