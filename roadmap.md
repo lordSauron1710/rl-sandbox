@@ -242,7 +242,7 @@ Create the Next.js frontend scaffold with the 3-column dashboard layout.
 ---
 
 ### Prompt 10 — Left sidebar: Environment select + Hyperparameters
-// NOT STARTED
+// EXECUTED
 
 Implement the left sidebar with environment selection and training configuration.
 
@@ -281,7 +281,15 @@ Implement the center panel with live visualization and training metrics.
 - Status badges: Episode count, Current reward (with +/- sign)
 - Live visualization area:
   - Display environment render (video/canvas from backend stream)
-  - Dark background for contrast
+  - **Use native Gymnasium renders** (actual environment graphics from the RL library)
+  - Dark background container for contrast
+  - **Note:** The design reference shows a stylized mockup. For v0, use Gymnasium's native RGB frame output as-is. Custom stylized rendering is out of scope.
+- **Environment preview (idle state):**
+  - When an environment is selected but NOT training/testing, display a static preview frame
+  - Shows the actual Gymnasium render of the environment's initial state
+  - Ensures visual consistency — user sees the same graphics style before and during training
+  - Preview is replaced by live stream when training/testing starts
+  - **Backend:** Add endpoint `GET /environments/{env_id}/preview` that returns a single JPEG frame
 - Metrics row (4 cards):
   - Mean Reward
   - Eps Length (episode length)
@@ -294,9 +302,11 @@ Implement the center panel with live visualization and training metrics.
 
 **Output:**
 - LiveFeed component with video/stream display
+- **EnvironmentPreview component** for idle state display
 - MetricsRow component
 - RewardHistoryChart component
 - SSE client for real-time updates
+- **Backend: Environment preview endpoint**
 
 ---
 

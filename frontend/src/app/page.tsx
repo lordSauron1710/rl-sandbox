@@ -1,24 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Header,
   LeftSidebar,
   CenterPanel,
   RightSidebar,
-  type Environment,
   type Metrics,
   type AlgorithmInfo,
   type AnalysisInsight,
   type EventLogEntry,
 } from '@/components'
-
-// Environment configurations matching backend
-const environments: Environment[] = [
-  { id: '01', name: 'LunarLander-v2', actionSpaceType: 'DISCRETE', obsSpaceDims: 8 },
-  { id: '02', name: 'CartPole-v1', actionSpaceType: 'DISCRETE', obsSpaceDims: 4 },
-  { id: '03', name: 'BipedalWalker-v3', actionSpaceType: 'CONTINUOUS', obsSpaceDims: 24 },
-]
+import { useEnvironments, useTraining } from '@/hooks'
 
 // Algorithm explanations
 const algorithmExplanations: Record<string, AlgorithmInfo> = {
@@ -60,57 +53,141 @@ const mockInsight: AnalysisInsight = {
   ],
 }
 
+/**
+ * Parse timesteps string (with commas) to number
+ */
+function parseTimesteps(value: string): number {
+  return parseInt(value.replace(/,/g, ''), 10) || 1000000
+}
+
+/**
+ * Format number with commas
+ */
+function formatNumber(value: number): string {
+  return value.toLocaleString('en-US')
+}
+
 export default function Home() {
-  // Environment state
-  const [selectedEnvId, setSelectedEnvId] = useState<string>(environments[0].id)
+  // Fetch environments from API
+  const { environments, isLoading: isLoadingEnvironments } = useEnvironments()
+  
+  // Training state management
+  const {
+    currentRun,
+    isCreating,
+    isStarting,
+    isEvaluating,
+    error: trainingError,
+    createAndStartTraining,
+    evaluate,
+    clearError,
+  } = useTraining()
+
+  // Environment state - select first environment when loaded
+  const [selectedEnvId, setSelectedEnvId] = useState<string | null>(null)
+  
+  // Auto-select first environment when loaded
+  useEffect(() => {
+    if (environments.length > 0 && !selectedEnvId) {
+      setSelectedEnvId(environments[0].id)
+    }
+  }, [environments, selectedEnvId])
 
   // Hyperparameters state
   const [algorithm, setAlgorithm] = useState('PPO')
   const [learningRate, setLearningRate] = useState('0.0003')
   const [totalTimesteps, setTotalTimesteps] = useState('1,000,000')
 
-  // Training state
-  const [isTraining, setIsTraining] = useState(false)
-  const [isTesting, setIsTesting] = useState(false)
+  // Training UI state
   const [isRecording, setIsRecording] = useState(false)
 
   // Metrics state
-  const [episode, setEpisode] = useState(412)
-  const [currentReward, setCurrentReward] = useState(24.5)
+  const [episode, setEpisode] = useState(0)
+  const [currentReward, setCurrentReward] = useState(0)
   const [metrics, setMetrics] = useState<Metrics>({
-    meanReward: 204.2,
-    episodeLength: 302,
-    loss: 0.021,
-    fps: 144,
+    meanReward: 0,
+    episodeLength: 0,
+    loss: 0,
+    fps: 0,
   })
-  const [rewardHistory, setRewardHistory] = useState(mockRewardHistory)
+  const [rewardHistory, setRewardHistory] = useState<number[]>([])
 
   // Event log state
-  const [events, setEvents] = useState<EventLogEntry[]>(mockEvents)
+  const [events, setEvents] = useState<EventLogEntry[]>([])
+
+  // Derive training state from currentRun
+  const isTraining = currentRun?.status === 'training' || isCreating || isStarting
+  const isTesting = currentRun?.status === 'evaluating' || isEvaluating
+
+  // Add event to log
+  const addEvent = (message: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
+    const now = new Date()
+    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
+    setEvents(prev => [
+      { id: Date.now().toString(), time, message, type },
+      ...prev.slice(0, 49), // Keep last 50 events
+    ])
+  }
 
   // Handlers
   const handleTrain = async () => {
-    // TODO: Connect to backend API
-    setIsTraining(true)
-    console.log('Starting training...', {
-      environment: selectedEnvId,
-      algorithm,
-      learningRate,
-      totalTimesteps,
-    })
+    if (!selectedEnvId) return
+    
+    clearError()
+    addEvent(`Starting training [${algorithm}]...`, 'info')
+    
+    try {
+      await createAndStartTraining({
+        env_id: selectedEnvId,
+        algorithm,
+        hyperparameters: {
+          learning_rate: parseFloat(learningRate),
+          total_timesteps: parseTimesteps(totalTimesteps),
+        },
+      })
+      
+      addEvent(`Training started on ${selectedEnvId}`, 'success')
+      
+      // Load mock data for demo purposes
+      // In a real implementation, this would come from SSE streaming
+      setTimeout(() => {
+        setEpisode(412)
+        setCurrentReward(24.5)
+        setMetrics({
+          meanReward: 204.2,
+          episodeLength: 302,
+          loss: 0.021,
+          fps: 144,
+        })
+        setRewardHistory(mockRewardHistory)
+        setEvents(mockEvents)
+      }, 1000)
+      
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start training'
+      addEvent(`Error: ${message}`, 'error')
+    }
   }
 
   const handleTest = async () => {
-    // TODO: Connect to backend API
-    setIsTesting(true)
-    console.log('Starting test...', { environment: selectedEnvId })
+    if (!currentRun) {
+      addEvent('No trained model available for testing', 'warning')
+      return
+    }
+    
+    clearError()
+    addEvent('Starting evaluation: 10 episodes...', 'info')
+    
+    try {
+      await evaluate(10)
+      addEvent('Evaluation started', 'success')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start evaluation'
+      addEvent(`Error: ${message}`, 'error')
+    }
   }
 
   const handleReset = () => {
-    // TODO: Reset training state
-    setIsTraining(false)
-    setIsTesting(false)
-    setIsRecording(false)
     setEpisode(0)
     setCurrentReward(0)
     setMetrics({
@@ -120,12 +197,22 @@ export default function Home() {
       fps: 0,
     })
     setRewardHistory([])
+    setIsRecording(false)
+    addEvent('Session reset', 'info')
   }
 
   const handleGenerateReport = () => {
+    addEvent('Generating report...', 'info')
     // TODO: Generate and download report
     console.log('Generating report...')
   }
+
+  // Show error notification
+  useEffect(() => {
+    if (trainingError) {
+      addEvent(`Error: ${trainingError.message}`, 'error')
+    }
+  }, [trainingError])
 
   return (
     <>
@@ -138,6 +225,7 @@ export default function Home() {
         {/* Left Sidebar */}
         <LeftSidebar
           environments={environments}
+          isLoadingEnvironments={isLoadingEnvironments}
           selectedEnvId={selectedEnvId}
           onSelectEnvironment={setSelectedEnvId}
           algorithm={algorithm}
@@ -150,6 +238,7 @@ export default function Home() {
           onTest={handleTest}
           isTraining={isTraining}
           isTesting={isTesting}
+          isCreatingRun={isCreating}
         />
 
         {/* Center Panel */}
@@ -166,7 +255,10 @@ export default function Home() {
 
         {/* Right Sidebar */}
         <RightSidebar
-          insight={mockInsight}
+          insight={events.length > 0 ? mockInsight : {
+            title: 'AWAITING DATA',
+            paragraphs: ['Start training to see policy analysis and insights.'],
+          }}
           events={events}
           onGenerateReport={handleGenerateReport}
         />

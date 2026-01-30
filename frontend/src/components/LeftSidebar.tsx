@@ -1,16 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-
-export interface Environment {
-  id: string
-  name: string
-  actionSpaceType: 'DISCRETE' | 'CONTINUOUS'
-  obsSpaceDims: number
-}
+import { ApiEnvironment } from '@/services/api'
+import { EnvironmentCard, EnvironmentCardSkeleton } from './EnvironmentCard'
+import { HyperparametersForm } from './HyperparametersForm'
+import { LoadingButton } from './LoadingButton'
 
 interface LeftSidebarProps {
-  environments: Environment[]
+  environments: ApiEnvironment[]
+  isLoadingEnvironments?: boolean
   selectedEnvId: string | null
   onSelectEnvironment: (envId: string) => void
   algorithm: string
@@ -23,10 +20,12 @@ interface LeftSidebarProps {
   onTest: () => void
   isTraining?: boolean
   isTesting?: boolean
+  isCreatingRun?: boolean
 }
 
 export function LeftSidebar({
   environments,
+  isLoadingEnvironments = false,
   selectedEnvId,
   onSelectEnvironment,
   algorithm,
@@ -39,10 +38,20 @@ export function LeftSidebar({
   onTest,
   isTraining = false,
   isTesting = false,
+  isCreatingRun = false,
 }: LeftSidebarProps) {
   // Determine available algorithms based on selected environment
   const selectedEnv = environments.find((e) => e.id === selectedEnvId)
-  const isDQNAvailable = selectedEnv?.actionSpaceType === 'DISCRETE'
+  const supportedAlgorithms = selectedEnv?.supported_algorithms || ['PPO']
+  const isDQNAvailable = supportedAlgorithms.includes('DQN')
+
+  // If current algorithm is not supported, switch to PPO
+  const effectiveAlgorithm = supportedAlgorithms.includes(algorithm) ? algorithm : 'PPO'
+  if (effectiveAlgorithm !== algorithm && selectedEnv) {
+    onAlgorithmChange(effectiveAlgorithm)
+  }
+
+  const isOperationInProgress = isTraining || isTesting || isCreatingRun
 
   return (
     <div className="panel-card col w-[280px] flex-shrink-0">
@@ -53,23 +62,18 @@ export function LeftSidebar({
 
       {/* Environment Cards */}
       <div className="p-4 border-b border-border">
-        {environments.map((env) => (
-          <div
-            key={env.id}
-            className={`env-card ${selectedEnvId === env.id ? 'active' : ''}`}
-            onClick={() => onSelectEnvironment(env.id)}
-          >
-            <div className="flex justify-between items-start mb-1">
-              <span className="font-semibold">{env.name}</span>
-              <span className="label m-0 text-[9px]">
-                ID:{env.id.slice(0, 2).toUpperCase()}
-              </span>
-            </div>
-            <span className="label m-0">
-              {env.actionSpaceType} / BOX({env.obsSpaceDims})
-            </span>
-          </div>
-        ))}
+        {isLoadingEnvironments ? (
+          <EnvironmentCardSkeleton count={3} />
+        ) : (
+          environments.map((env) => (
+            <EnvironmentCard
+              key={env.id}
+              environment={env}
+              isSelected={selectedEnvId === env.id}
+              onSelect={onSelectEnvironment}
+            />
+          ))
+        )}
       </div>
 
       {/* Hyperparameters Header */}
@@ -79,65 +83,48 @@ export function LeftSidebar({
 
       {/* Hyperparameters Form */}
       <div className="p-4 flex-1 flex flex-col">
-        {/* Algorithm */}
-        <div className="mb-4">
-          <label className="label">Algorithm</label>
-          <select
-            className="input"
-            value={algorithm}
-            onChange={(e) => onAlgorithmChange(e.target.value)}
-          >
-            <option value="PPO">PPO (Proximal Policy)</option>
-            {isDQNAvailable && (
-              <option value="DQN">DQN (Deep Q-Network)</option>
-            )}
-          </select>
-        </div>
-
-        {/* Learning Rate */}
-        <div className="mb-4">
-          <label className="label">Learning Rate</label>
-          <input
-            type="number"
-            className="input"
-            value={learningRate}
-            step="0.0001"
-            onChange={(e) => onLearningRateChange(e.target.value)}
-          />
-        </div>
-
-        {/* Total Timesteps */}
-        <div className="mb-4">
-          <label className="label">Total Timesteps</label>
-          <input
-            type="text"
-            className="input"
-            value={totalTimesteps}
-            onChange={(e) => onTotalTimestepsChange(e.target.value)}
-          />
-        </div>
+        <HyperparametersForm
+          algorithm={effectiveAlgorithm}
+          onAlgorithmChange={onAlgorithmChange}
+          learningRate={learningRate}
+          onLearningRateChange={onLearningRateChange}
+          totalTimesteps={totalTimesteps}
+          onTotalTimestepsChange={onTotalTimestepsChange}
+          supportedAlgorithms={supportedAlgorithms}
+          disabled={isOperationInProgress}
+          showDQNHint={selectedEnv?.action_space_type === 'Continuous'}
+        />
 
         {/* Spacer */}
-        <div className="flex-1" />
+        <div className="flex-1 min-h-4" />
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-4">
-          <button
-            className="btn btn-primary py-3 text-xs"
+        <div className="grid grid-cols-2 gap-3">
+          <LoadingButton
+            variant="primary"
+            className="py-3 text-xs"
             onClick={onTrain}
-            disabled={isTraining || !selectedEnvId}
+            isLoading={isTraining || isCreatingRun}
+            loadingText={isCreatingRun ? 'Creating...' : 'Training...'}
+            disabled={!selectedEnvId || isOperationInProgress}
           >
-            {isTraining ? 'Training...' : 'Train'}
-          </button>
-          <button
-            className="btn btn-secondary py-3 text-xs"
+            TRAIN
+          </LoadingButton>
+          <LoadingButton
+            variant="secondary"
+            className="py-3 text-xs"
             onClick={onTest}
-            disabled={isTesting || !selectedEnvId}
+            isLoading={isTesting}
+            loadingText="Testing..."
+            disabled={!selectedEnvId || isOperationInProgress}
           >
-            {isTesting ? 'Testing...' : 'Test'}
-          </button>
+            TEST
+          </LoadingButton>
         </div>
       </div>
     </div>
   )
 }
+
+// Re-export Environment type for backwards compatibility
+export type { ApiEnvironment as Environment } from '@/services/api'

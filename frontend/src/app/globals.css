@@ -69,12 +69,34 @@
 
   /* Environment cards */
   .env-card {
-    @apply p-2 border border-border rounded mb-2 cursor-pointer transition-colors;
+    @apply p-3 border border-border rounded-lg mb-2 cursor-pointer transition-all duration-200;
   }
 
-  .env-card:hover,
+  .env-card:hover {
+    @apply border-black/50 bg-surface-secondary;
+  }
+
   .env-card.active {
-    @apply border-black;
+    @apply border-black bg-surface-secondary shadow-sm;
+  }
+
+  /* Environment ID badge */
+  .env-badge {
+    @apply text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded;
+    @apply bg-surface-secondary text-text-secondary border border-border;
+  }
+
+  /* Space type badges */
+  .space-badge {
+    @apply text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded;
+  }
+
+  .space-badge.discrete {
+    @apply bg-black text-white;
+  }
+
+  .space-badge.continuous {
+    @apply bg-transparent text-black border border-black;
   }
 
   /* Metric bars */
