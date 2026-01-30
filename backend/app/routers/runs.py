@@ -13,6 +13,7 @@ from app.models.run import RunStatus
 from app.models.event import EventType
 from app.models.environment import get_environment
 from app.storage.run_storage import RunStorage
+from app.training import get_training_manager
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -145,12 +146,30 @@ def _build_run_response(run_dict: dict) -> RunResponse:
         
         total_timesteps = config_data.get("hyperparameters", {}).get("total_timesteps", 1000000)
         metrics_count = storage.get_metrics_count()
-        progress = RunProgress(
-            current_timestep=0,  # Will be updated when training is implemented
-            total_timesteps=total_timesteps,
-            percent_complete=0.0,
-            episodes_completed=metrics_count,
-        )
+        
+        # Get real-time progress from training manager if available
+        manager = get_training_manager()
+        manager_progress = manager.get_progress(run_dict["id"])
+        
+        if manager_progress and manager_progress["is_running"]:
+            # Use live data from training manager
+            current_timestep = manager_progress["current_timestep"]
+            progress = RunProgress(
+                current_timestep=current_timestep,
+                total_timesteps=total_timesteps,
+                percent_complete=manager_progress["percent_complete"],
+                episodes_completed=metrics_count,
+            )
+        else:
+            # Use stored metrics data
+            current_timestep = latest.get("timestep", 0) if metrics else 0
+            percent_complete = (current_timestep / total_timesteps * 100) if total_timesteps > 0 else 0
+            progress = RunProgress(
+                current_timestep=current_timestep,
+                total_timesteps=total_timesteps,
+                percent_complete=percent_complete,
+                episodes_completed=metrics_count,
+            )
     
     return RunResponse(
         id=run_dict["id"],
@@ -317,9 +336,10 @@ async def get_run(run_id: str) -> RunResponse:
 @router.post("/{run_id}/start", response_model=MessageResponse)
 async def start_training(run_id: str) -> MessageResponse:
     """
-    Start training for a pending run.
+    Start training for a pending or stopped run.
     
-    Note: Training implementation will be added in Prompt 05.
+    Training runs in a background thread, allowing the API to remain responsive.
+    Use the /runs/{id}/stop endpoint to interrupt training.
     """
     run_dict = runs_repository.get_run(run_id)
     if not run_dict:
@@ -334,36 +354,43 @@ async def start_training(run_id: str) -> MessageResponse:
             }
         )
     
-    if run_dict["status"] != RunStatus.PENDING.value:
+    # Check valid starting states
+    valid_states = [RunStatus.PENDING.value, RunStatus.STOPPED.value]
+    if run_dict["status"] not in valid_states:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error": {
                     "code": "conflict",
                     "message": f"Cannot start run in {run_dict['status']} status",
-                    "details": {"current_status": run_dict["status"]}
+                    "details": {
+                        "current_status": run_dict["status"],
+                        "valid_states": valid_states
+                    }
                 }
             }
         )
     
-    # TODO: Implement actual training in Prompt 05
-    # For now, just update status
-    runs_repository.update_run_status(
-        run_id=run_id,
-        status=RunStatus.TRAINING,
-        started_at=datetime.utcnow(),
-    )
+    # Start training via manager
+    manager = get_training_manager()
+    result = manager.start_training(run_id)
     
-    events_repository.create_event(
-        run_id=run_id,
-        event_type=EventType.TRAINING_STARTED,
-        message="Training started",
-    )
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "training_error",
+                    "message": result["error"],
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
     
     return MessageResponse(
         id=run_id,
         status="training",
-        message="Training started"
+        message=result["message"]
     )
 
 
@@ -372,7 +399,8 @@ async def stop_training(run_id: str) -> MessageResponse:
     """
     Stop a running training session.
     
-    Note: Training implementation will be added in Prompt 05.
+    Sends a stop signal to the training thread. Training will stop gracefully
+    after the current environment step completes.
     """
     run_dict = runs_repository.get_run(run_id)
     if not run_dict:
@@ -399,23 +427,26 @@ async def stop_training(run_id: str) -> MessageResponse:
             }
         )
     
-    # TODO: Implement actual stop in Prompt 05
-    runs_repository.update_run_status(
-        run_id=run_id,
-        status=RunStatus.STOPPED,
-        completed_at=datetime.utcnow(),
-    )
+    # Stop training via manager
+    manager = get_training_manager()
+    result = manager.stop_training(run_id)
     
-    events_repository.create_event(
-        run_id=run_id,
-        event_type=EventType.TRAINING_STOPPED,
-        message="Training stopped by user",
-    )
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "stop_error",
+                    "message": result["error"],
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
     
     return MessageResponse(
         id=run_id,
-        status="stopped",
-        message="Training stopped"
+        status="stopping",
+        message=result["message"]
     )
 
 

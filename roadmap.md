@@ -104,7 +104,7 @@ Implement the FastAPI backend skeleton.
 ---
 
 ### Prompt 05 — Training runner (in-process, interruptible)
-// NOT STARTED
+// EXECUTED
 
 Implement an in-process training runner for Stable-Baselines3.
 
