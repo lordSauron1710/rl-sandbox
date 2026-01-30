@@ -19,61 +19,39 @@ export const LoadingButton = forwardRef<HTMLButtonElement, LoadingButtonProps>(
     const disabledClasses = (disabled || isLoading) ? 'cursor-not-allowed' : ''
 
     return (
-      <div className="relative">
-        {/* Glowing progress ring around button */}
-        {isLoading && (
-          <div className="absolute inset-0 -m-[3px] rounded-full pointer-events-none">
-            <svg
-              className="w-full h-full"
-              viewBox="0 0 100 100"
-              style={{ transform: 'rotate(-90deg)' }}
-            >
-              {/* Background track */}
-              <rect
-                x="2"
-                y="2"
-                width="96"
-                height="96"
-                rx="48"
-                ry="48"
-                fill="none"
-                stroke="rgba(0,0,0,0.1)"
-                strokeWidth="3"
-              />
-              {/* Animated progress arc */}
-              <rect
-                x="2"
-                y="2"
-                width="96"
-                height="96"
-                rx="48"
-                ry="48"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-                className="text-black animate-border-progress"
-                style={{
-                  strokeDasharray: '300 300',
-                  filter: 'drop-shadow(0 0 6px rgba(0,0,0,0.5))',
-                }}
-              />
-            </svg>
-          </div>
-        )}
+      <div className="relative inline-block w-full">
         <button
           ref={ref}
-          className={`${baseClasses} ${variantClasses} ${disabledClasses} ${className} ${isLoading ? 'opacity-90' : ''}`}
+          className={`${baseClasses} ${variantClasses} ${disabledClasses} ${className} relative overflow-hidden`}
           disabled={disabled || isLoading}
           {...props}
         >
-          {isLoading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span>{loadingText || children}</span>
-            </span>
-          ) : (
-            children
+          {/* Glowing gradient fill progress bar */}
+          {isLoading && (
+            <div className="absolute inset-0 overflow-hidden rounded-full">
+              <div 
+                className="absolute inset-0 rounded-full animate-progress-fill"
+                style={{
+                  background: variant === 'primary' 
+                    ? 'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%)'
+                    : 'linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0) 100%)',
+                  width: '200%',
+                  boxShadow: variant === 'primary'
+                    ? '0 0 20px rgba(255,255,255,0.5)'
+                    : '0 0 20px rgba(0,0,0,0.3)',
+                }}
+              />
+            </div>
           )}
+          
+          {/* Button content */}
+          <span className="relative z-10 flex items-center justify-center gap-2">
+            {isLoading ? (
+              <span>{loadingText || children}</span>
+            ) : (
+              children
+            )}
+          </span>
         </button>
       </div>
     )

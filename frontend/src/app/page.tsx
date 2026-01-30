@@ -62,9 +62,11 @@ export default function Home() {
     currentRun,
     isCreating,
     isStarting,
+    isStopping,
     isEvaluating,
     error: trainingError,
     createAndStartTraining,
+    stop,
     evaluate,
     clearError,
   } = useTraining()
@@ -114,6 +116,9 @@ export default function Home() {
 
   // Event log state
   const [events, setEvents] = useState<EventLogEntry[]>([])
+  
+  // Analysis insight state
+  const [currentInsight, setCurrentInsight] = useState<AnalysisInsight | null>(null)
 
   // Derive training state from currentRun
   const isTraining = currentRun?.status === 'training' || isCreating || isStarting
@@ -129,8 +134,13 @@ export default function Home() {
         loss: streamedMetrics.loss ?? 0,
         fps: streamedMetrics.fps,
       })
+      
+      // Show insight after some training
+      if (streamedMetrics.episode > 10 && !currentInsight) {
+        setCurrentInsight(mockInsight)
+      }
     }
-  }, [streamedMetrics])
+  }, [streamedMetrics, currentInsight])
 
   // Connect/disconnect streams when training starts/stops
   useEffect(() => {
@@ -207,6 +217,23 @@ export default function Home() {
     }
   }
 
+  const handleStop = async () => {
+    if (!currentRun) return
+    
+    clearError()
+    addEvent('Stopping training...', 'info')
+    
+    try {
+      await stop()
+      addEvent('Training stopped', 'success')
+      disconnectMetrics()
+      disconnectFrames()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to stop training'
+      addEvent(`Error: ${message}`, 'error')
+    }
+  }
+
   const handleReset = () => {
     setMetrics({
       meanReward: 0,
@@ -215,6 +242,7 @@ export default function Home() {
       fps: 0,
     })
     setIsRecording(false)
+    setCurrentInsight(null) // Clear analysis insight
     disconnectMetrics()
     disconnectFrames()
     addEvent('Session reset', 'info')
@@ -255,6 +283,7 @@ export default function Home() {
           onTotalTimestepsChange={setTotalTimesteps}
           onTrain={handleTrain}
           onTest={handleTest}
+          onStop={handleStop}
           isTraining={isTraining}
           isTesting={isTesting}
           isCreatingRun={isCreating}
@@ -278,10 +307,7 @@ export default function Home() {
 
         {/* Right Sidebar */}
         <RightSidebar
-          insight={events.length > 0 ? mockInsight : {
-            title: 'AWAITING DATA',
-            paragraphs: ['Start training to see policy analysis and insights.'],
-          }}
+          insight={currentInsight || undefined}
           events={events}
           onGenerateReport={handleGenerateReport}
         />

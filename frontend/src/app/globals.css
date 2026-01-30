@@ -219,3 +219,31 @@
 .animate-border-progress {
   animation: border-progress 2s ease-in-out infinite;
 }
+
+/* Border trace animation - follows button boundaries */
+@keyframes border-trace {
+  0% {
+    stroke-dashoffset: 1000;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-border-trace {
+  animation: border-trace 2s linear infinite;
+}
+
+/* Progress fill animation - glowing gradient sweep */
+@keyframes progress-fill {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(50%);
+  }
+}
+
+.animate-progress-fill {
+  animation: progress-fill 1.5s ease-in-out infinite;
+}

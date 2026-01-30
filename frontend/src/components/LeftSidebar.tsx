@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { ApiEnvironment } from '@/services/api'
 import { EnvironmentCard, EnvironmentCardSkeleton } from './EnvironmentCard'
 import { HyperparametersForm } from './HyperparametersForm'
@@ -18,6 +19,7 @@ interface LeftSidebarProps {
   onTotalTimestepsChange: (timesteps: string) => void
   onTrain: () => void
   onTest: () => void
+  onStop: () => void
   isTraining?: boolean
   isTesting?: boolean
   isCreatingRun?: boolean
@@ -36,6 +38,7 @@ export function LeftSidebar({
   onTotalTimestepsChange,
   onTrain,
   onTest,
+  onStop,
   isTraining = false,
   isTesting = false,
   isCreatingRun = false,
@@ -52,6 +55,7 @@ export function LeftSidebar({
   }
 
   const isOperationInProgress = isTraining || isTesting || isCreatingRun
+  const [isHoveringTrain, setIsHoveringTrain] = useState(false)
 
   return (
     <div className="panel-card col w-[280px] flex-shrink-0">
@@ -100,16 +104,37 @@ export function LeftSidebar({
 
         {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-3">
-          <LoadingButton
-            variant="primary"
-            className="py-3 text-xs"
-            onClick={onTrain}
-            isLoading={isTraining || isCreatingRun}
-            loadingText={isCreatingRun ? 'Creating...' : 'Training...'}
-            disabled={!selectedEnvId || isOperationInProgress}
+          {/* Train Button with Stop overlay */}
+          <div 
+            className="relative"
+            onMouseEnter={() => setIsHoveringTrain(true)}
+            onMouseLeave={() => setIsHoveringTrain(false)}
           >
-            TRAIN
-          </LoadingButton>
+            <LoadingButton
+              variant="primary"
+              className="py-3 text-xs"
+              onClick={onTrain}
+              isLoading={isTraining || isCreatingRun}
+              loadingText={isCreatingRun ? 'Creating...' : 'Training...'}
+              disabled={!selectedEnvId || isOperationInProgress}
+            >
+              TRAIN
+            </LoadingButton>
+            
+            {/* Stop Button - only visible on hover while training */}
+            {isHoveringTrain && isTraining && !isCreatingRun && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onStop()
+                }}
+                className="absolute inset-0 btn bg-red-600 border-red-600 text-white hover:bg-red-700 transition-colors duration-200 py-3 text-xs rounded-full"
+              >
+                STOP
+              </button>
+            )}
+          </div>
+          
           <LoadingButton
             variant="secondary"
             className="py-3 text-xs"

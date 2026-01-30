@@ -255,9 +255,17 @@ class MetricsCallback(BaseCallback):
             if env is None:
                 return
 
+            # For vectorized environments, get the first env
+            if hasattr(env, 'envs'):
+                env = env.envs[0]
+            elif hasattr(env, 'env'):
+                env = env.env
+
             # Render the frame
             frame = env.render()
             if frame is None:
+                if self.verbose > 1:
+                    print(f"[MetricsCallback] Frame render returned None")
                 return
 
             # Encode frame to base64 JPEG
@@ -278,10 +286,15 @@ class MetricsCallback(BaseCallback):
             )
 
             self.last_frame_time = current_time
+            
+            if self.verbose > 1:
+                print(f"[MetricsCallback] Frame published: ep={self.episode_count}, step={self.current_step_in_episode}")
 
         except Exception as e:
             if self.verbose > 0:
                 print(f"[MetricsCallback] Frame streaming error: {e}")
+                import traceback
+                traceback.print_exc()
 
     def _on_training_end(self) -> None:
         """Called at the end of training."""

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { LiveFeed } from './LiveFeed'
 import { LiveFrameState } from '@/hooks'
 
@@ -138,6 +139,8 @@ function RewardHistoryChart({
   minReward: number
   range: number
 }) {
+  const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null)
+
   // Show placeholder if no data
   if (rewardHistory.length === 0) {
     return (
@@ -153,21 +156,44 @@ function RewardHistoryChart({
   }
 
   return (
-    <div className="p-4 border-t border-border bg-white">
+    <div className="p-4 border-t border-border bg-white relative">
       <span className="label">REWARD HISTORY (LAST 100)</span>
-      <div className="h-[60px] flex items-end gap-[2px] mt-2">
+      <div className="h-[60px] flex items-end gap-[2px] mt-2 relative">
         {rewardHistory.map((reward, index) => {
           const height = ((reward - minReward) / range) * 100
           return (
             <div
               key={index}
-              className="bar"
+              className="bar relative cursor-pointer"
               style={{ height: `${Math.max(height, 2)}%` }}
-              title={`Episode ${index + 1}: ${reward.toFixed(1)}`}
+              onMouseEnter={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setHoveredBar({ 
+                  index, 
+                  x: rect.left + rect.width / 2,
+                  y: rect.top
+                })
+              }}
+              onMouseLeave={() => setHoveredBar(null)}
             />
           )
         })}
       </div>
+      
+      {/* Tooltip */}
+      {hoveredBar !== null && (
+        <div
+          className="fixed z-50 bg-black text-white text-[10px] px-2 py-1 rounded pointer-events-none"
+          style={{
+            left: `${hoveredBar.x}px`,
+            top: `${hoveredBar.y - 30}px`,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <div className="font-mono">EP {hoveredBar.index + 1}</div>
+          <div className="font-mono font-semibold">{rewardHistory[hoveredBar.index].toFixed(1)}</div>
+        </div>
+      )}
     </div>
   )
 }

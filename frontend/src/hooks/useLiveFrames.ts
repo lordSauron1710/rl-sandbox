@@ -75,6 +75,11 @@ export function useLiveFrames(): UseLiveFramesResult {
           
           if (data.type === 'frame') {
             const frameData = data as FrameData
+            console.log('[useLiveFrames] Received frame:', {
+              episode: frameData.episode,
+              step: frameData.step,
+              dataLength: frameData.data?.length,
+            })
             setFrame({
               frameData: frameData.data,
               episode: frameData.episode,
@@ -84,15 +89,16 @@ export function useLiveFrames(): UseLiveFramesResult {
             })
           } else if (data.type === 'status') {
             // Initial status update
-            console.log('Frame stream status:', data)
+            console.log('[useLiveFrames] Frame stream status:', data)
           } else if (data.type === 'end') {
-            console.log('Frame stream ended:', data.reason)
+            console.log('[useLiveFrames] Frame stream ended:', data.reason)
             disconnect()
           } else if (data.type === 'error') {
+            console.log('[useLiveFrames] Frame stream error:', data)
             setError(new Error(data.message || 'Stream error'))
           }
         } catch (e) {
-          console.error('Failed to parse WebSocket message:', e)
+          console.error('[useLiveFrames] Failed to parse WebSocket message:', e)
         }
       }
       
