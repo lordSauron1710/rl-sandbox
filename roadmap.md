@@ -277,47 +277,47 @@ Implement the left sidebar with environment selection and training configuration
 Implement the center panel with live visualization and training metrics.
 
 **Requirements:**
-- Header row: "LIVE FEED" label + RECORD and RESET buttons ✅
-- Status badges: Episode count, Current reward (with +/- sign) ✅
-- Live visualization area: ✅
-  - Display environment render (video/canvas from backend stream) ✅
-  - **Use native Gymnasium renders** (actual environment graphics from the RL library) ✅
-  - Dark background container for contrast ✅
-  - WebSocket frame streaming with base64 JPEG encoding ✅
+- Header row: "LIVE FEED" label + RECORD and RESET buttons
+- Status badges: Episode count, Current reward (with +/- sign)
+- Live visualization area:
+  - Display environment render (video/canvas from backend stream)
+  - **Use native Gymnasium renders** (actual environment graphics from the RL library)
+  - Dark background container for contrast
+  - WebSocket frame streaming with base64 JPEG encoding
   - **Note:** The design reference shows a stylized mockup. For v0, use Gymnasium's native RGB frame output as-is. Custom stylized rendering is out of scope.
-- **Environment preview (idle state):** ✅
-  - When an environment is selected but NOT training/testing, display a static preview frame ✅
-  - Shows the actual Gymnasium render of the environment's initial state ✅
-  - Ensures visual consistency — user sees the same graphics style before and during training ✅
-  - Preview is replaced by live stream when training/testing starts ✅
-  - **Backend:** Add endpoint `GET /environments/{env_id}/preview` that returns a single JPEG frame ✅
-- Metrics row (4 cards): ✅
-  - Mean Reward ✅
-  - Eps Length (episode length) ✅
-  - Loss ✅
-  - FPS ✅
-- Reward History chart: ✅
-  - "REWARD HISTORY (LAST 100)" label ✅
-  - Bar chart showing episode rewards ✅
-  - Hover tooltips with episode number and reward value ✅
-  - Custom canvas-based implementation ✅
+- **Environment preview (idle state):**
+  - When an environment is selected but NOT training/testing, display a static preview frame
+  - Shows the actual Gymnasium render of the environment's initial state
+  - Ensures visual consistency — user sees the same graphics style before and during training
+  - Preview is replaced by live stream when training/testing starts
+  - **Backend:** Add endpoint `GET /environments/{env_id}/preview` that returns a single JPEG frame
+- Metrics row (4 cards):
+  - Mean Reward
+  - Eps Length (episode length)
+  - Loss
+  - FPS
+- Reward History chart:
+  - "REWARD HISTORY (LAST 100)" label
+  - Bar chart showing episode rewards
+  - Hover tooltips with episode number and reward value
+  - Custom canvas-based implementation
 
 **Additional Features Implemented:**
-- **Stop Training Button:** Hover over TRAIN button while training to reveal red STOP button ✅
-- **Progress Bar Animation:** Glowing gradient fill that sweeps across button during loading ✅
-- **Reset Functionality:** Clears analysis insights and returns to preview state ✅
-- **Insight State Management:** Analysis section only appears after training progresses ✅
+- **Stop Training Button:** Hover over TRAIN button while training to reveal red STOP button
+- **Progress Bar Animation:** Glowing gradient fill that sweeps across button during loading
+- **Reset Functionality:** Clears analysis insights and returns to preview state
+- **Insight State Management:** Analysis section only appears after training progresses
 
 **Output:**
-- LiveFeed component with video/stream display ✅
-- **EnvironmentPreview component** for idle state display ✅
-- MetricsRow component (4 metric cards) ✅
-- RewardHistoryChart component with hover tooltips ✅
-- SSE client for real-time metric updates ✅
-- WebSocket client for real-time frame streaming ✅
-- **Backend: Environment preview endpoint** ✅
-- **Backend: Frame streaming with callback** ✅
-- **Stop training functionality** ✅
+- LiveFeed component with video/stream display
+- **EnvironmentPreview component** for idle state display
+- MetricsRow component (4 metric cards)
+- RewardHistoryChart component with hover tooltips
+- SSE client for real-time metric updates
+- WebSocket client for real-time frame streaming
+- **Backend: Environment preview endpoint**
+- **Backend: Frame streaming with callback**
+- **Stop training functionality**
 
 ---
 
