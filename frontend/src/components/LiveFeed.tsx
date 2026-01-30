@@ -88,7 +88,7 @@ export function LiveFeed({
           <img
             src={`data:image/jpeg;base64,${liveFrame.frameData}`}
             alt="Live environment render"
-            className="w-full h-full object-cover"
+            className="max-w-full max-h-full object-contain"
           />
         )}
 
@@ -97,7 +97,7 @@ export function LiveFeed({
           <img
             src={previewUrl}
             alt={`${selectedEnvId} preview`}
-            className="w-full h-full object-cover opacity-80"
+            className="max-w-full max-h-full object-contain opacity-90"
             onError={() => setPreviewError(true)}
           />
         )}
