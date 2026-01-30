@@ -1,4 +1,8 @@
 export { useEnvironments } from './useEnvironments'
 export { useTraining } from './useTraining'
+export { useMetricsStream } from './useMetricsStream'
+export { useLiveFrames } from './useLiveFrames'
 export type { UseEnvironmentsResult } from './useEnvironments'
 export type { UseTrainingResult } from './useTraining'
+export type { UseMetricsStreamResult } from './useMetricsStream'
+export type { UseLiveFramesResult, LiveFrameState } from './useLiveFrames'

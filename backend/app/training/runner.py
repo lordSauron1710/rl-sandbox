@@ -89,9 +89,9 @@ class TrainingRunner:
                 f"{env_id} has {env_meta.action_space_type} actions."
             )
 
-    def _create_env(self) -> gym.Env:
+    def _create_env(self, render_mode: str = "rgb_array") -> gym.Env:
         """Create and configure the Gymnasium environment."""
-        env = gym.make(self.env_id)
+        env = gym.make(self.env_id, render_mode=render_mode)
         if self.seed is not None:
             env.reset(seed=self.seed)
         return env
@@ -171,6 +171,9 @@ class TrainingRunner:
                 on_progress=self.on_progress,
                 log_interval=1,  # Log every episode
                 verbose=self.verbose,
+                enable_frame_streaming=True,  # Enable live frame streaming
+                frame_fps=15,  # 15 FPS for training visualization
+                frame_quality=70,  # Slightly lower quality for speed
             )
 
             # Checkpoint callback - save every 10% of training

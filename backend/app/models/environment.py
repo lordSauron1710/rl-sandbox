@@ -19,10 +19,11 @@ class Environment(BaseModel):
 
 
 # Hardcoded environment registry for v0
+# Note: Using v3 versions for LunarLander and BipedalWalker (v2 deprecated in Gymnasium 1.0+)
 ENVIRONMENTS: List[Environment] = [
     Environment(
-        id="LunarLander-v2",
-        name="LunarLander-v2",
+        id="LunarLander-v3",
+        name="LunarLander-v3",
         display_id="ID:01",
         action_space_type="Discrete",
         action_space_size=4,

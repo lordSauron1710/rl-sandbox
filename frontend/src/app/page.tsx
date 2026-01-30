@@ -11,7 +11,7 @@ import {
   type AnalysisInsight,
   type EventLogEntry,
 } from '@/components'
-import { useEnvironments, useTraining } from '@/hooks'
+import { useEnvironments, useTraining, useMetricsStream, useLiveFrames } from '@/hooks'
 
 // Algorithm explanations
 const algorithmExplanations: Record<string, AlgorithmInfo> = {
@@ -30,20 +30,6 @@ const algorithmExplanations: Record<string, AlgorithmInfo> = {
     bestFor: 'Discrete action spaces, game-like environments',
   },
 }
-
-// Mock data for initial state
-const mockRewardHistory = [
-  20, 35, 40, 30, 55, 65, 45, 70, 80, 75, 90, 60, 50, 40, 55, 85, 95, 80, 70, 60,
-  65, 55, 45, 35,
-]
-
-const mockEvents: EventLogEntry[] = [
-  { id: '1', time: '11:04', message: 'Model checkpoint saved (ep_400)', type: 'info' },
-  { id: '2', time: '11:03', message: 'Evaluation started: 10 episodes', type: 'info' },
-  { id: '3', time: '11:02', message: 'Warning: High variance detected', type: 'warning' },
-  { id: '4', time: '11:00', message: 'Training started [PPO]', type: 'info' },
-  { id: '5', time: '10:59', message: 'Environment initialized', type: 'success' },
-]
 
 const mockInsight: AnalysisInsight = {
   title: 'POLICY BEHAVIOR DETECTED',
@@ -83,6 +69,23 @@ export default function Home() {
     clearError,
   } = useTraining()
 
+  // Metrics streaming
+  const {
+    metrics: streamedMetrics,
+    rewardHistory: streamedRewardHistory,
+    isConnected: isMetricsConnected,
+    connect: connectMetrics,
+    disconnect: disconnectMetrics,
+  } = useMetricsStream()
+
+  // Live frame streaming
+  const {
+    frame: liveFrame,
+    isConnected: isFramesConnected,
+    connect: connectFrames,
+    disconnect: disconnectFrames,
+  } = useLiveFrames()
+
   // Environment state - select first environment when loaded
   const [selectedEnvId, setSelectedEnvId] = useState<string | null>(null)
   
@@ -101,16 +104,13 @@ export default function Home() {
   // Training UI state
   const [isRecording, setIsRecording] = useState(false)
 
-  // Metrics state
-  const [episode, setEpisode] = useState(0)
-  const [currentReward, setCurrentReward] = useState(0)
+  // Metrics state (local fallback + computed from stream)
   const [metrics, setMetrics] = useState<Metrics>({
     meanReward: 0,
     episodeLength: 0,
     loss: 0,
     fps: 0,
   })
-  const [rewardHistory, setRewardHistory] = useState<number[]>([])
 
   // Event log state
   const [events, setEvents] = useState<EventLogEntry[]>([])
@@ -118,6 +118,40 @@ export default function Home() {
   // Derive training state from currentRun
   const isTraining = currentRun?.status === 'training' || isCreating || isStarting
   const isTesting = currentRun?.status === 'evaluating' || isEvaluating
+  const isActive = isTraining || isTesting
+
+  // Update metrics from stream
+  useEffect(() => {
+    if (streamedMetrics) {
+      setMetrics({
+        meanReward: streamedMetrics.reward,
+        episodeLength: streamedMetrics.length,
+        loss: streamedMetrics.loss ?? 0,
+        fps: streamedMetrics.fps,
+      })
+    }
+  }, [streamedMetrics])
+
+  // Connect/disconnect streams when training starts/stops
+  useEffect(() => {
+    if (currentRun?.id && (currentRun.status === 'training' || currentRun.status === 'evaluating')) {
+      connectMetrics(currentRun.id)
+      connectFrames(currentRun.id, 15)  // 15 FPS for live frames
+    } else {
+      disconnectMetrics()
+      disconnectFrames()
+    }
+    
+    return () => {
+      disconnectMetrics()
+      disconnectFrames()
+    }
+  }, [currentRun?.id, currentRun?.status, connectMetrics, disconnectMetrics, connectFrames, disconnectFrames])
+
+  // Computed values from stream or local state
+  const episode = streamedMetrics?.episode ?? 0
+  const currentReward = liveFrame?.totalReward ?? streamedMetrics?.reward ?? 0
+  const rewardHistory = streamedRewardHistory.length > 0 ? streamedRewardHistory : []
 
   // Add event to log
   const addEvent = (message: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
@@ -147,21 +181,7 @@ export default function Home() {
       })
       
       addEvent(`Training started on ${selectedEnvId}`, 'success')
-      
-      // Load mock data for demo purposes
-      // In a real implementation, this would come from SSE streaming
-      setTimeout(() => {
-        setEpisode(412)
-        setCurrentReward(24.5)
-        setMetrics({
-          meanReward: 204.2,
-          episodeLength: 302,
-          loss: 0.021,
-          fps: 144,
-        })
-        setRewardHistory(mockRewardHistory)
-        setEvents(mockEvents)
-      }, 1000)
+      addEvent('Environment initialized', 'success')
       
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start training'
@@ -188,16 +208,15 @@ export default function Home() {
   }
 
   const handleReset = () => {
-    setEpisode(0)
-    setCurrentReward(0)
     setMetrics({
       meanReward: 0,
       episodeLength: 0,
       loss: 0,
       fps: 0,
     })
-    setRewardHistory([])
     setIsRecording(false)
+    disconnectMetrics()
+    disconnectFrames()
     addEvent('Session reset', 'info')
   }
 
@@ -243,6 +262,10 @@ export default function Home() {
 
         {/* Center Panel */}
         <CenterPanel
+          selectedEnvId={selectedEnvId}
+          liveFrame={liveFrame}
+          isActive={isActive}
+          isStreamConnected={isMetricsConnected || isFramesConnected}
           episode={episode}
           currentReward={currentReward}
           metrics={metrics}

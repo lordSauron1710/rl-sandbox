@@ -6,33 +6,76 @@ interface LoadingButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   isLoading?: boolean
   loadingText?: string
   variant?: 'primary' | 'secondary'
+  progress?: number // 0-100 for progress ring
 }
 
 /**
- * Button component with circular progress spinner for loading states
+ * Button component with circular progress ring around the border
  */
 export const LoadingButton = forwardRef<HTMLButtonElement, LoadingButtonProps>(
-  ({ children, isLoading, loadingText, variant = 'primary', disabled, className = '', ...props }, ref) => {
-    const baseClasses = 'btn relative'
+  ({ children, isLoading, loadingText, variant = 'primary', disabled, className = '', progress, ...props }, ref) => {
+    const baseClasses = 'btn relative overflow-visible'
     const variantClasses = variant === 'primary' ? 'btn-primary' : 'btn-secondary'
-    const disabledClasses = (disabled || isLoading) ? 'opacity-60 cursor-not-allowed' : ''
+    const disabledClasses = (disabled || isLoading) ? 'cursor-not-allowed' : ''
 
     return (
-      <button
-        ref={ref}
-        className={`${baseClasses} ${variantClasses} ${disabledClasses} ${className}`}
-        disabled={disabled || isLoading}
-        {...props}
-      >
-        {isLoading ? (
-          <span className="flex items-center justify-center gap-2">
-            <LoadingSpinner size={14} variant={variant} />
-            <span>{loadingText || children}</span>
-          </span>
-        ) : (
-          children
+      <div className="relative">
+        {/* Glowing progress ring around button */}
+        {isLoading && (
+          <div className="absolute inset-0 -m-[3px] rounded-full pointer-events-none">
+            <svg
+              className="w-full h-full"
+              viewBox="0 0 100 100"
+              style={{ transform: 'rotate(-90deg)' }}
+            >
+              {/* Background track */}
+              <rect
+                x="2"
+                y="2"
+                width="96"
+                height="96"
+                rx="48"
+                ry="48"
+                fill="none"
+                stroke="rgba(0,0,0,0.1)"
+                strokeWidth="3"
+              />
+              {/* Animated progress arc */}
+              <rect
+                x="2"
+                y="2"
+                width="96"
+                height="96"
+                rx="48"
+                ry="48"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+                className="text-black animate-border-progress"
+                style={{
+                  strokeDasharray: '300 300',
+                  filter: 'drop-shadow(0 0 6px rgba(0,0,0,0.5))',
+                }}
+              />
+            </svg>
+          </div>
         )}
-      </button>
+        <button
+          ref={ref}
+          className={`${baseClasses} ${variantClasses} ${disabledClasses} ${className} ${isLoading ? 'opacity-90' : ''}`}
+          disabled={disabled || isLoading}
+          {...props}
+        >
+          {isLoading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span>{loadingText || children}</span>
+            </span>
+          ) : (
+            children
+          )}
+        </button>
+      </div>
     )
   }
 )

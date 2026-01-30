@@ -174,3 +174,58 @@ export async function listRuns(params?: {
   }
   return response.json()
 }
+
+/**
+ * Get environment preview image URL
+ * Returns a URL that can be used as an img src
+ */
+export function getEnvironmentPreviewUrl(envId: string): string {
+  return `${API_BASE_URL}/environments/${encodeURIComponent(envId)}/preview`
+}
+
+/**
+ * Metrics data from SSE stream
+ */
+export interface MetricsData {
+  episode: number
+  reward: number
+  length: number
+  loss: number | null
+  fps: number
+  timestamp: string
+}
+
+/**
+ * Frame data from WebSocket stream
+ */
+export interface FrameData {
+  type: 'frame'
+  data: string  // base64 encoded JPEG
+  timestamp: string
+  episode: number
+  step: number
+  reward: number
+  total_reward: number
+}
+
+/**
+ * Get the WebSocket URL for frame streaming
+ */
+export function getFramesWebSocketUrl(runId: string, fps: number = 15): string {
+  const wsBase = API_BASE_URL.replace(/^http/, 'ws')
+  return `${wsBase}/runs/${runId}/ws/frames?fps=${fps}`
+}
+
+/**
+ * Get the SSE URL for metrics streaming
+ */
+export function getMetricsStreamUrl(runId: string): string {
+  return `${API_BASE_URL}/runs/${runId}/stream/metrics`
+}
+
+/**
+ * Get the SSE URL for events streaming
+ */
+export function getEventsStreamUrl(runId: string): string {
+  return `${API_BASE_URL}/runs/${runId}/stream/events`
+}

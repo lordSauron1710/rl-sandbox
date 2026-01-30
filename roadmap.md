@@ -272,7 +272,7 @@ Implement the left sidebar with environment selection and training configuration
 ---
 
 ### Prompt 11 — Center panel: Live feed + Metrics + Reward history
-// NOT STARTED
+// IN PROGRESS
 
 Implement the center panel with live visualization and training metrics.
 
