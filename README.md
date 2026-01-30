@@ -1,4 +1,4 @@
-# RL Gym Visualizer
+# RL/Gym Visualizer
 
 A lightweight web application for visualizing reinforcement learning training and evaluation.
 
