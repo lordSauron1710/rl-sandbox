@@ -125,14 +125,18 @@ export async function stopTraining(runId: string): Promise<{ id: string; status:
 export async function triggerEvaluation(
   runId: string,
   nEpisodes: number = 10,
-  render: boolean = true
+  streamFrames: boolean = true
 ): Promise<{ id: string; status: string; message: string }> {
   const response = await fetch(`${API_BASE_URL}/runs/${runId}/evaluate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ n_episodes: nEpisodes, render }),
+    body: JSON.stringify({
+      num_episodes: nEpisodes,
+      stream_frames: streamFrames,
+      target_fps: 15,
+    }),
   })
   if (!response.ok) {
     const error = await response.json()

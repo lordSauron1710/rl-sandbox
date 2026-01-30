@@ -87,6 +87,7 @@ export function LiveFeed({
             <button
               className="btn btn-secondary w-auto px-3 py-1 text-[10px]"
               onClick={onReset}
+              title="Clear display to 0 (metrics, reward history, insight)"
             >
               Reset
             </button>
@@ -117,7 +118,10 @@ export function LiveFeed({
 
         {/* Placeholder when no environment selected or preview failed */}
         {showPlaceholder && (
-          <PlaceholderVisualization />
+          <PlaceholderVisualization
+            hasSelectedEnv={!!selectedEnvId}
+            previewFailed={!!selectedEnvId && previewError}
+          />
         )}
 
         {/* Episode/Reward Badges - Stacked vertically */}
@@ -144,11 +148,17 @@ export function LiveFeed({
 }
 
 /**
- * Placeholder visualization when no environment is selected
+ * Placeholder visualization when no environment is selected or preview failed
  */
-function PlaceholderVisualization() {
+function PlaceholderVisualization({
+  hasSelectedEnv,
+  previewFailed,
+}: {
+  hasSelectedEnv: boolean
+  previewFailed: boolean
+}) {
   return (
-    <div className="flex flex-col items-center justify-center text-white/50">
+    <div className="flex flex-col items-center justify-center text-white/50 px-4 text-center">
       <svg
         className="w-16 h-16 mb-4"
         fill="none"
@@ -162,8 +172,18 @@ function PlaceholderVisualization() {
           d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
         />
       </svg>
-      <p className="text-xs uppercase tracking-wider">Select an environment to preview</p>
-      <p className="text-[10px] mt-1">or start training to see live render</p>
+      {!hasSelectedEnv && (
+        <>
+          <p className="text-xs uppercase tracking-wider">Select an environment to preview</p>
+          <p className="text-[10px] mt-1">or start training to see live render</p>
+        </>
+      )}
+      {hasSelectedEnv && previewFailed && (
+        <>
+          <p className="text-xs uppercase tracking-wider text-amber-400/90">Preview unavailable</p>
+          <p className="text-[10px] mt-1">Start the backend to see previews: run <code className="bg-white/10 px-1 rounded">make backend</code> in a terminal</p>
+        </>
+      )}
     </div>
   )
 }

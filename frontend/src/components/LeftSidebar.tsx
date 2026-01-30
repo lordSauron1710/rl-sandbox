@@ -55,7 +55,6 @@ export function LeftSidebar({
   }
 
   const isOperationInProgress = isTraining || isTesting || isCreatingRun
-  const [isHoveringTrain, setIsHoveringTrain] = useState(false)
 
   return (
     <div className="panel-card col w-[280px] flex-shrink-0">
@@ -104,36 +103,28 @@ export function LeftSidebar({
 
         {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-3">
-          {/* Train Button with Stop overlay */}
-          <div 
-            className="relative"
-            onMouseEnter={() => setIsHoveringTrain(true)}
-            onMouseLeave={() => setIsHoveringTrain(false)}
-          >
+          {/* When training: show STOP as its own button. Otherwise show TRAIN. */}
+          {isTraining && !isCreatingRun ? (
+            <button
+              type="button"
+              onClick={onStop}
+              title="Stop training (abrupt)"
+              className="btn bg-red-600 border-red-600 text-white hover:bg-red-700 transition-colors duration-200 py-3 text-xs rounded-full col-span-1"
+            >
+              STOP
+            </button>
+          ) : (
             <LoadingButton
               variant="primary"
               className="py-3 text-xs"
               onClick={onTrain}
-              isLoading={isTraining || isCreatingRun}
-              loadingText={isCreatingRun ? 'Creating...' : 'Training...'}
+              isLoading={isCreatingRun}
+              loadingText="Creating..."
               disabled={!selectedEnvId || isOperationInProgress}
             >
               TRAIN
             </LoadingButton>
-            
-            {/* Stop Button - only visible on hover while training */}
-            {isHoveringTrain && isTraining && !isCreatingRun && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onStop()
-                }}
-                className="absolute inset-0 btn bg-red-600 border-red-600 text-white hover:bg-red-700 transition-colors duration-200 py-3 text-xs rounded-full"
-              >
-                STOP
-              </button>
-            )}
-          </div>
+          )}
           
           <LoadingButton
             variant="secondary"

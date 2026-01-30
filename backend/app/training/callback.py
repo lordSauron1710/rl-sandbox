@@ -245,9 +245,9 @@ class MetricsCallback(BaseCallback):
         if current_time - self.last_frame_time < self.frame_interval:
             return  # Not enough time has passed
 
-        # Check if there are subscribers
+        # Skip rendering if no subscribers (saves CPU when no client is watching)
         if self.frames_pubsub.get_subscriber_count(self.run_id) == 0:
-            return  # No subscribers, skip rendering
+            return
 
         try:
             # Get the environment from the model

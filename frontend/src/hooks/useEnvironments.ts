@@ -29,8 +29,8 @@ export function useEnvironments(): UseEnvironmentsResult {
       // Fallback to hardcoded environments if API fails
       setEnvironments([
         {
-          id: 'LunarLander-v2',
-          name: 'LunarLander-v2',
+          id: 'LunarLander-v3',
+          name: 'LunarLander-v3',
           display_id: 'ID:01',
           action_space_type: 'Discrete',
           action_space_size: 4,

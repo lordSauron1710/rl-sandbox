@@ -55,7 +55,7 @@ function formatNumber(value: number): string {
 
 export default function Home() {
   // Fetch environments from API
-  const { environments, isLoading: isLoadingEnvironments } = useEnvironments()
+  const { environments, isLoading: isLoadingEnvironments, error: environmentsError, refetch: refetchEnvironments } = useEnvironments()
   
   // Training state management
   const {
@@ -142,21 +142,28 @@ export default function Home() {
     }
   }, [streamedMetrics, currentInsight])
 
-  // Connect/disconnect streams when training starts/stops
+  // Connect streams as soon as we have a run and are training, evaluating, or about to start.
+  // Connecting when isStarting ensures the backend has a subscriber before the first frame.
   useEffect(() => {
-    if (currentRun?.id && (currentRun.status === 'training' || currentRun.status === 'evaluating')) {
-      connectMetrics(currentRun.id)
-      connectFrames(currentRun.id, 15)  // 15 FPS for live frames
+    const shouldConnect =
+      currentRun?.id &&
+      (currentRun.status === 'training' ||
+        currentRun.status === 'evaluating' ||
+        isStarting)
+
+    if (shouldConnect) {
+      connectMetrics(currentRun!.id)
+      connectFrames(currentRun!.id, 15)
     } else {
       disconnectMetrics()
       disconnectFrames()
     }
-    
+
     return () => {
       disconnectMetrics()
       disconnectFrames()
     }
-  }, [currentRun?.id, currentRun?.status, connectMetrics, disconnectMetrics, connectFrames, disconnectFrames])
+  }, [currentRun?.id, currentRun?.status, isStarting, connectMetrics, disconnectMetrics, connectFrames, disconnectFrames])
 
   // Computed values from stream or local state
   const episode = streamedMetrics?.episode ?? 0
@@ -264,6 +271,22 @@ export default function Home() {
   return (
     <>
       <Header version="v0.0" />
+
+      {/* Backend unreachable banner */}
+      {environmentsError && (
+        <div className="bg-amber-500/15 border-b border-amber-500/40 px-4 py-2 flex items-center justify-between gap-4">
+          <p className="text-sm text-amber-800">
+            <span className="font-medium">Backend not reachable.</span> Start it with <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-xs">make backend</code> so previews and training work.
+          </p>
+          <button
+            type="button"
+            onClick={() => refetchEnvironments()}
+            className="btn btn-secondary text-xs py-1 px-2"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <main
         className="main-grid flex-1 grid gap-6 h-[calc(100vh-60px)] overflow-hidden p-6 pt-4 bg-surface-secondary"
