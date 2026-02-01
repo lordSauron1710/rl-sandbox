@@ -8,6 +8,7 @@ export interface AnalysisInsight {
 export interface EventLogEntry {
   id: string
   time: string
+  timestamp?: number
   message: string
   type: 'info' | 'warning' | 'error' | 'success'
 }
@@ -18,19 +19,19 @@ interface RightSidebarProps {
   onGenerateReport: () => void
 }
 
-export function RightSidebar({
-  insight,
-  events,
-  onGenerateReport,
-}: RightSidebarProps) {
+export function RightSidebar(props: RightSidebarProps) {
+  const { insight, events, onGenerateReport } = props
+
+  const sortedEvents = [...events].sort(
+    (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
+  )
+
   return (
     <div className="panel-card col col-right w-[320px] flex-shrink-0">
-      {/* Analysis Header */}
       <div className="panel-header">
         <span className="label m-0">ANALYSIS & EXPLAINER</span>
       </div>
 
-      {/* Analysis Content */}
       <div className="p-4 border-b border-border">
         {insight ? (
           <>
@@ -56,19 +57,17 @@ export function RightSidebar({
         </button>
       </div>
 
-      {/* Event Log Header */}
       <div className="panel-header border-t border-border">
         <span className="label m-0">EVENT LOG</span>
       </div>
 
-      {/* Event Log Entries */}
       <div className="px-4 flex-1 overflow-y-auto scrollbar-thin">
-        {events.length === 0 ? (
+        {sortedEvents.length === 0 ? (
           <p className="font-mono text-[11px] text-text-secondary py-2">
             No events yet.
           </p>
         ) : (
-          events.map((event) => (
+          sortedEvents.map((event) => (
             <div
               key={event.id}
               className="font-mono text-[11px] py-2 border-b border-border flex gap-2"

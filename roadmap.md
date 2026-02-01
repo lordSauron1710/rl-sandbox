@@ -2,6 +2,10 @@
 
 ======================================================================
 
+**Before executing prompts:** See `AGENTS.md` (Key Files, **Learning from errors.md**). Check `errors.md` when you hit an error or before changing streaming/training/evaluation or env/render code, so past fixes and lessons are applied.
+
+======================================================================
+
 ## Phase 0 — Repo + contracts
 
 ======================================================================
@@ -321,6 +325,11 @@ Implement the center panel with live visualization and training metrics.
 - **Docs:** `docs/prompt-11-analysis-and-tests.md` — requirements vs implementation, feature matrix, how to run tests
 - **CI smoke test:** `test-smoke.sh` — minimal backend check (health, list envs, create run, start, stop; no long sleeps, no preview)
 - **Makefile:** `make test-smoke` (smoke), `make test` (full `test-comprehensive.sh`)
+
+**Acceptance — Live stream during training must work:**
+- The center panel must show the live environment render from the first step when the user clicks TRAIN (not a black box or placeholder).
+- Frontend: connect to the frames WebSocket **before** calling start training; wait for the WebSocket to be open so the backend has a subscriber from step one. Do not rely on effect-only connect (see `errors.md` §1.1).
+- If the live feed stays blank during training, treat it as a bug and fix using the latest working approach in `errors.md` (wait for `connectFrames` to resolve before `startTraining`; avoid effect disconnecting the socket).
 
 ---
 

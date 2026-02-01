@@ -88,6 +88,7 @@ export default function Home() {
     connect: connectFrames,
     disconnect: disconnectFrames,
     clear: clearFramesStream,
+    clearError: clearFramesError,
   } = useLiveFrames()
 
   // Environment state - select first environment when loaded
@@ -144,12 +145,14 @@ export default function Home() {
     }
   }, [streamedMetrics, currentInsight])
 
-  // Connect streams as soon as we have a run and are training, evaluating, or about to start.
-  // Connecting when isStarting ensures the backend has a subscriber before the first frame.
+  // Connect streams as soon as we have a run (including pending) so the backend has a
+  // subscriber before training starts. This ensures the live feed shows frames from the
+  // first step for all environments and training states.
   useEffect(() => {
     const shouldConnect =
       currentRun?.id &&
-      (currentRun.status === 'training' ||
+      (currentRun.status === 'pending' ||
+        currentRun.status === 'training' ||
         currentRun.status === 'evaluating' ||
         isStarting)
 
@@ -172,12 +175,13 @@ export default function Home() {
   const currentReward = liveFrame?.totalReward ?? streamedMetrics?.reward ?? 0
   const rewardHistory = streamedRewardHistory.length > 0 ? streamedRewardHistory : []
 
-  // Add event to log
+  // Add event to log (stored with timestamp for chronological sort)
   const addEvent = (message: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
     const now = new Date()
+    const timestamp = now.getTime()
     const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
     setEvents(prev => [
-      { id: Date.now().toString(), time, message, type },
+      { id: `${timestamp}-${Math.random().toString(36).slice(2, 9)}`, time, timestamp, message, type },
       ...prev.slice(0, 49), // Keep last 50 events
     ])
   }
@@ -187,17 +191,38 @@ export default function Home() {
     if (!selectedEnvId) return
     
     clearError()
+    clearFramesError()
     addEvent(`Starting training [${algorithm}]...`, 'info')
     
     try {
-      await createAndStartTraining({
-        env_id: selectedEnvId,
-        algorithm,
-        hyperparameters: {
-          learning_rate: parseFloat(learningRate),
-          total_timesteps: parseTimesteps(totalTimesteps),
+      // Connect to frames/metrics as soon as we have a run (before startTraining) so the
+      // backend has a subscriber from the first step and the live feed shows the environment.
+      await createAndStartTraining(
+        {
+          env_id: selectedEnvId,
+          algorithm,
+          hyperparameters: {
+            learning_rate: parseFloat(learningRate),
+            total_timesteps: parseTimesteps(totalTimesteps),
+          },
         },
-      })
+        {
+          onRunCreated: async (run) => {
+            connectMetrics(run.id)
+            try {
+              await Promise.race([
+                connectFrames(run.id, 15),
+                new Promise<void>((_, reject) =>
+                  setTimeout(() => reject(new Error('Connection timeout')), 8000)
+                ),
+              ])
+            } catch {
+              // Live feed WebSocket failed or timed out. Don't block training; clear so no error toast.
+              clearFramesError()
+            }
+          },
+        }
+      )
       
       addEvent(`Training started on ${selectedEnvId}`, 'success')
       addEvent('Environment initialized', 'success')
@@ -218,6 +243,9 @@ export default function Home() {
     addEvent('Starting evaluation: 10 episodes...', 'info')
     
     try {
+      // Connect frames before evaluation so the live feed shows the environment during test
+      connectMetrics(currentRun.id)
+      connectFrames(currentRun.id, 15)
       await evaluate(10)
       addEvent('Evaluation started', 'success')
     } catch (err) {

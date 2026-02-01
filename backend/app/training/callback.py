@@ -268,8 +268,12 @@ class MetricsCallback(BaseCallback):
                     print(f"[MetricsCallback] Frame render returned None")
                 return
 
-            # Encode frame to base64 JPEG
+            # Encode frame to base64 JPEG (handle float 0-1 or uint8 0-255 from different envs)
             from PIL import Image
+            if frame.dtype == np.floating:
+                frame = (np.clip(frame, 0, 1) * 255).astype(np.uint8)
+            elif frame.dtype != np.uint8:
+                frame = np.asarray(frame, dtype=np.uint8)
             img = Image.fromarray(frame)
             buffer = io.BytesIO()
             img.save(buffer, format="JPEG", quality=self.frame_quality)

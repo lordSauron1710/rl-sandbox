@@ -15,9 +15,12 @@ export interface UseLiveFramesResult {
   frame: LiveFrameState | null
   isConnected: boolean
   error: Error | null
-  connect: (runId: string, fps?: number) => void
+  /** Connect to frame stream. Returns a Promise that resolves when the WebSocket is open (so caller can wait before starting training). */
+  connect: (runId: string, fps?: number) => Promise<void>
   disconnect: () => void
   clear: () => void
+  /** Clear error state (e.g. when caller decided not to block on connection failure). */
+  clearError: () => void
   pause: () => void
   resume: () => void
   setFps: (fps: number) => void
@@ -32,6 +35,7 @@ export function useLiveFrames(): UseLiveFramesResult {
   const [error, setError] = useState<Error | null>(null)
   
   const wsRef = useRef<WebSocket | null>(null)
+  const runIdRef = useRef<string | null>(null)
   const isPausedRef = useRef(false)
 
   const sendControl = useCallback((action: string, value?: number) => {
@@ -49,6 +53,7 @@ export function useLiveFrames(): UseLiveFramesResult {
       wsRef.current.close()
       wsRef.current = null
     }
+    runIdRef.current = null
     setIsConnected(false)
     isPausedRef.current = false
   }, [])
@@ -57,72 +62,78 @@ export function useLiveFrames(): UseLiveFramesResult {
     setFrame(null)
   }, [])
 
-  const connect = useCallback((runId: string, fps: number = 15) => {
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
+
+  const connect = useCallback((runId: string, fps: number = 15): Promise<void> => {
+    // Already connected for this run — don't disconnect/reconnect (e.g. effect re-running)
+    if (runIdRef.current === runId && wsRef.current?.readyState === WebSocket.OPEN) {
+      return Promise.resolve()
+    }
+
     // Close any existing connection
     disconnect()
-    
+
     setError(null)
     setFrame(null)
-    
-    try {
-      const url = getFramesWebSocketUrl(runId, fps)
-      const ws = new WebSocket(url)
-      wsRef.current = ws
-      
-      ws.onopen = () => {
-        setIsConnected(true)
-        setError(null)
-      }
-      
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          
-          if (data.type === 'frame') {
-            const frameData = data as FrameData
-            console.log('[useLiveFrames] Received frame:', {
-              episode: frameData.episode,
-              step: frameData.step,
-              dataLength: frameData.data?.length,
-            })
-            setFrame({
-              frameData: frameData.data,
-              episode: frameData.episode,
-              step: frameData.step,
-              reward: frameData.reward,
-              totalReward: frameData.total_reward,
-            })
-          } else if (data.type === 'status') {
-            // Initial status update
-            console.log('[useLiveFrames] Frame stream status:', data)
-          } else if (data.type === 'end') {
-            console.log('[useLiveFrames] Frame stream ended:', data.reason)
-            disconnect()
-          } else if (data.type === 'error') {
-            console.log('[useLiveFrames] Frame stream error:', data)
-            setError(new Error(data.message || 'Stream error'))
+
+    return new Promise((resolve, reject) => {
+      try {
+        const url = getFramesWebSocketUrl(runId, fps)
+        const ws = new WebSocket(url)
+        wsRef.current = ws
+        runIdRef.current = runId
+
+        ws.onopen = () => {
+          setIsConnected(true)
+          setError(null)
+          resolve()
+        }
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+
+            if (data.type === 'frame') {
+              const frameData = data as FrameData
+              setFrame({
+                frameData: frameData.data,
+                episode: frameData.episode,
+                step: frameData.step,
+                reward: frameData.reward,
+                totalReward: frameData.total_reward,
+              })
+            } else if (data.type === 'status') {
+              // Initial status update
+            } else if (data.type === 'end') {
+              disconnect()
+            } else if (data.type === 'error') {
+              setError(new Error(data.message || 'Stream error'))
+            }
+          } catch (e) {
+            console.error('[useLiveFrames] Failed to parse WebSocket message:', e)
           }
-        } catch (e) {
-          console.error('[useLiveFrames] Failed to parse WebSocket message:', e)
         }
-      }
-      
-      ws.onerror = () => {
-        setError(new Error('WebSocket connection error'))
-      }
-      
-      ws.onclose = (event) => {
+
+        ws.onerror = () => {
+          setError(new Error('WebSocket connection error'))
+          reject(new Error('WebSocket connection error'))
+        }
+
+        ws.onclose = (event) => {
+          runIdRef.current = null
+          setIsConnected(false)
+          if (event.code !== 1000 && event.code !== 1001) {
+            setError(new Error(`Connection closed: ${event.reason || 'Unknown reason'}`))
+          }
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e : new Error('Failed to connect'))
         setIsConnected(false)
-        if (event.code !== 1000 && event.code !== 1001) {
-          // Abnormal closure
-          setError(new Error(`Connection closed: ${event.reason || 'Unknown reason'}`))
-        }
+        reject(e instanceof Error ? e : new Error('Failed to connect'))
       }
-      
-    } catch (e) {
-      setError(e instanceof Error ? e : new Error('Failed to connect'))
-      setIsConnected(false)
-    }
+    })
   }, [disconnect])
 
   const pause = useCallback(() => {
@@ -153,6 +164,7 @@ export function useLiveFrames(): UseLiveFramesResult {
     connect,
     disconnect,
     clear,
+    clearError,
     pause,
     resume,
     setFps,

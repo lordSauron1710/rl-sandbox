@@ -44,6 +44,23 @@ This repository contains the development of an **RL Gym Visualizer** - a lightwe
 
 - `roadmap.md` - Contains the development prompts for building the v0 MVP
 - `README.md` - Project documentation
+- `errors.md` - Log of errors encountered, root causes, fixes, and lessons; used to avoid repeating mistakes
+
+## Learning from errors.md
+
+Use `errors.md` to learn from past mistakes and avoid repeating them.
+
+1. **Before changing streaming, training, or evaluation flow**  
+   Re-read the "Real-time streaming & connection timing" section in `errors.md` so subscriber/connection timing stays correct (e.g. connect before starting training/evaluation).
+
+2. **Before adding or changing environment support or frame rendering**  
+   Re-read the "Backend: frame encoding" section so frame encoding stays robust across envs (e.g. float vs uint8, different dtypes).
+
+3. **When you fix a bug**  
+   Add a short entry to `errors.md`: symptom, root cause, fix, and a one-line lesson. Use the existing categories or add one. Update the categorisation summary table if useful.
+
+4. **When you hit an error**  
+   Check `errors.md` first; it may document a known race, assumption, or API misuse and how it was fixed.
 
 ## Prompt Execution Tracking
 

@@ -3,6 +3,11 @@
 import { useState, useCallback } from 'react'
 import { createRun, startTraining, stopTraining, triggerEvaluation, ApiRun, RunConfig } from '@/services/api'
 
+export interface CreateAndStartOptions {
+  /** Called immediately after the run is created and before training starts. Use to connect streams so the live feed gets frames from the first step. If it returns a Promise, training will not start until it resolves (e.g. wait for WebSocket open). */
+  onRunCreated?: (run: ApiRun) => void | Promise<void>
+}
+
 export interface UseTrainingResult {
   currentRun: ApiRun | null
   isCreating: boolean
@@ -10,7 +15,7 @@ export interface UseTrainingResult {
   isStopping: boolean
   isEvaluating: boolean
   error: Error | null
-  createAndStartTraining: (config: RunConfig) => Promise<void>
+  createAndStartTraining: (config: RunConfig, options?: CreateAndStartOptions) => Promise<void>
   stop: () => Promise<void>
   evaluate: (nEpisodes?: number) => Promise<void>
   clearError: () => void
@@ -27,7 +32,7 @@ export function useTraining(): UseTrainingResult {
   const [isEvaluating, setIsEvaluating] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
-  const createAndStartTraining = useCallback(async (config: RunConfig) => {
+  const createAndStartTraining = useCallback(async (config: RunConfig, options?: CreateAndStartOptions) => {
     setError(null)
     setIsCreating(true)
     
@@ -36,6 +41,9 @@ export function useTraining(): UseTrainingResult {
       const run = await createRun(config)
       setCurrentRun(run)
       setIsCreating(false)
+      // Callback so caller can connect streams before training starts (ensures live feed gets frames from step 1).
+      // Await so we only start training after streams are connected (e.g. WebSocket open).
+      await Promise.resolve(options?.onRunCreated?.(run))
       
       // Start training
       setIsStarting(true)

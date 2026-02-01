@@ -16,13 +16,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+import numpy as np
 import gymnasium as gym
 from gymnasium.wrappers import RecordVideo
 from PIL import Image
 from stable_baselines3 import PPO, DQN
 
 from app.storage.run_storage import RunStorage
-from app.streaming.pubsub import get_frames_pubsub
+from app.streaming.pubsub import get_frames_pubsub, get_metrics_pubsub
 
 
 # Algorithm mapping
@@ -217,7 +218,11 @@ class EvaluationRunner:
             if frame is None:
                 return
 
-            # Convert numpy array to base64 JPEG
+            # Handle float 0-1 or uint8 0-255 from different envs
+            if frame.dtype == np.floating:
+                frame = (np.clip(frame, 0, 1) * 255).astype(np.uint8)
+            elif frame.dtype != np.uint8:
+                frame = np.asarray(frame, dtype=np.uint8)
             img = Image.fromarray(frame)
             
             # Resize if needed to stay under max resolution
@@ -280,6 +285,7 @@ class EvaluationRunner:
                 )
 
             # Run evaluation episodes
+            metrics_pubsub = get_metrics_pubsub()
             for ep_num in range(self.num_episodes):
                 if self.stop_flag():
                     if self.verbose > 0:
@@ -288,6 +294,18 @@ class EvaluationRunner:
 
                 result = self._run_episode(ep_num)
                 episode_results.append(result)
+
+                # Publish episode metric so frontend reward history updates during Test
+                metrics_pubsub.publish_metric(
+                    run_id=self.run_id,
+                    episode=ep_num + 1,
+                    reward=result.total_reward,
+                    length=result.episode_length,
+                    loss=None,
+                    fps=0,
+                    timestep=0,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
 
                 if self.verbose > 0:
                     print(f"[EvaluationRunner] Ep {ep_num + 1}/{self.num_episodes}: "

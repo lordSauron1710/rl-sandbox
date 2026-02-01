@@ -48,19 +48,6 @@ export function LiveFeed({
   const showLiveFrame = isActive && liveFrame?.frameData
   const showPreview = !isActive && selectedEnvId && !previewError
   const showPlaceholder = !showLiveFrame && !showPreview
-  
-  // Debug: log frame state
-  useEffect(() => {
-    if (isActive) {
-      console.log('[LiveFeed] Active state:', { 
-        isActive, 
-        hasFrameData: !!liveFrame?.frameData,
-        isConnected,
-        frameDataLength: liveFrame?.frameData?.length,
-        episode: liveFrame?.episode,
-      })
-    }
-  }, [isActive, liveFrame, isConnected])
 
   return (
     <>
