@@ -2,6 +2,8 @@
 
 A lightweight web application for visualizing reinforcement learning training and evaluation.
 
+**Current UI sample**
+
 ![Frontend Screenshot](docs/assets/frontend-screenshot.png)
 
 ## Features
