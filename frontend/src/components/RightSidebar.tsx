@@ -40,8 +40,9 @@ export function RightSidebar(props: RightSidebarProps) {
               <p
                 key={index}
                 className="font-sans text-[13px] text-text-secondary mb-4 leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: paragraph }}
-              />
+              >
+                {paragraph}
+              </p>
             ))}
           </>
         ) : (

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Header,
   LeftSidebar,
@@ -12,6 +12,7 @@ import {
   type EventLogEntry,
 } from '@/components'
 import { useEnvironments, useTraining, useMetricsStream, useLiveFrames } from '@/hooks'
+import { ApiRun } from '@/services/api'
 
 // Algorithm explanations
 const algorithmExplanations: Record<string, AlgorithmInfo> = {
@@ -31,13 +32,9 @@ const algorithmExplanations: Record<string, AlgorithmInfo> = {
   },
 }
 
-const mockInsight: AnalysisInsight = {
-  title: 'POLICY BEHAVIOR DETECTED',
-  paragraphs: [
-    'The agent has converged on a stable hovering strategy. Initial variance in the X-axis has reduced by 40% over the last 50 episodes.',
-    'Reward shaping suggests the penalty for thruster usage is currently outweighing the benefit of rapid descent. Consider adjusting <code class="font-mono text-xs bg-surface-secondary px-1 py-0.5 rounded">main_engine_penalty</code>.',
-  ],
-}
+const DEFAULT_LEARNING_RATE = '0.0003'
+const DEFAULT_TOTAL_TIMESTEPS = '1,000,000'
+const DEFAULT_EVAL_EPISODES = 10
 
 /**
  * Parse timesteps string (with commas) to number
@@ -46,11 +43,99 @@ function parseTimesteps(value: string): number {
   return parseInt(value.replace(/,/g, ''), 10) || 1000000
 }
 
-/**
- * Format number with commas
- */
-function formatNumber(value: number): string {
-  return value.toLocaleString('en-US')
+function clampPercent(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, value as number))
+}
+
+function mean(values: number[]): number {
+  if (values.length === 0) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function stdDev(values: number[]): number {
+  if (values.length < 2) return 0
+  const avg = mean(values)
+  const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length
+  return Math.sqrt(variance)
+}
+
+function buildAnalysisInsight({
+  run,
+  envLabel,
+  actionSpaceType,
+  algorithm,
+  rewardHistory,
+  meanReward,
+  episodeLength,
+  fps,
+  trainingProgressPercent,
+  testingProgressPercent,
+  currentEvalEpisode,
+  totalEvalEpisodes,
+}: {
+  run: ApiRun | null
+  envLabel: string
+  actionSpaceType: 'Discrete' | 'Continuous' | 'Unknown'
+  algorithm: string
+  rewardHistory: number[]
+  meanReward: number
+  episodeLength: number
+  fps: number
+  trainingProgressPercent: number
+  testingProgressPercent: number
+  currentEvalEpisode: number
+  totalEvalEpisodes: number
+}): AnalysisInsight | null {
+  if (!run) return null
+
+  const mode = run.status === 'evaluating' ? 'EVALUATION' : 'TRAINING'
+  const progressPercent = run.status === 'evaluating' ? testingProgressPercent : trainingProgressPercent
+  const progressText = `${Math.round(progressPercent)}%`
+
+  if (rewardHistory.length < 3) {
+    return {
+      title: `${mode} INITIALIZING`,
+      paragraphs: [
+        `${algorithm} on ${envLabel} is active (${actionSpaceType} action space). Progress is ${progressText} while early episodes are still collecting signal.`,
+        `Current telemetry: mean reward ${meanReward.toFixed(1)}, episode length ${episodeLength}, stream FPS ${fps}.`,
+      ],
+    }
+  }
+
+  const windowSize = Math.min(10, rewardHistory.length)
+  const recentWindow = rewardHistory.slice(-windowSize)
+  const previousWindow = rewardHistory.slice(-windowSize * 2, -windowSize)
+
+  const recentMean = mean(recentWindow)
+  const previousMean = previousWindow.length > 0 ? mean(previousWindow) : recentMean
+  const delta = recentMean - previousMean
+  const volatility = stdDev(recentWindow)
+
+  const trendLabel =
+    delta > 1 ? 'improving' : delta < -1 ? 'regressing' : 'flat'
+  const trendMagnitude = Math.abs(delta).toFixed(1)
+
+  const genericTip =
+    algorithm === 'DQN'
+      ? 'If trend stays flat, increase timesteps or lower learning rate so replay updates stabilize.'
+      : actionSpaceType === 'Continuous'
+      ? 'Continuous-control runs are noisy early; prioritize trend over single-episode spikes.'
+      : 'If volatility remains high, extend timesteps or reduce learning rate for smoother policy updates.'
+
+  const modeParagraph =
+    run.status === 'evaluating'
+      ? `Evaluation progress is ${progressText} (${Math.max(0, currentEvalEpisode)}/${Math.max(1, totalEvalEpisodes)} episodes).`
+      : `Training progress is ${progressText} (${run.progress?.current_timestep ?? 0}/${run.progress?.total_timesteps ?? 0} timesteps).`
+
+  return {
+    title: `${mode} SIGNAL`,
+    paragraphs: [
+      `${algorithm} on ${envLabel}: recent reward mean ${recentMean.toFixed(1)} (${trendLabel}, ${trendMagnitude} vs previous ${windowSize}-episode window).`,
+      `Reward volatility over the latest window is ${volatility.toFixed(1)}; current episode length is ${episodeLength} and live stream FPS is ${fps}.`,
+      `${modeParagraph} ${genericTip}`,
+    ],
+  }
 }
 
 export default function Home() {
@@ -60,8 +145,11 @@ export default function Home() {
   // Training state management
   const {
     currentRun,
+    evaluationProgress,
     isCreating,
     isStarting,
+    isStoppingTraining,
+    isStoppingEvaluation,
     isEvaluating,
     createAndStartTraining,
     stop,
@@ -74,7 +162,6 @@ export default function Home() {
   const {
     metrics: streamedMetrics,
     rewardHistory: streamedRewardHistory,
-    isConnected: isMetricsConnected,
     connect: connectMetrics,
     disconnect: disconnectMetrics,
     clear: clearMetricsStream,
@@ -102,8 +189,8 @@ export default function Home() {
 
   // Hyperparameters state
   const [algorithm, setAlgorithm] = useState('PPO')
-  const [learningRate, setLearningRate] = useState('0.0003')
-  const [totalTimesteps, setTotalTimesteps] = useState('1,000,000')
+  const [learningRate, setLearningRate] = useState(DEFAULT_LEARNING_RATE)
+  const [totalTimesteps, setTotalTimesteps] = useState(DEFAULT_TOTAL_TIMESTEPS)
 
   // Training UI state
   const [isRecording, setIsRecording] = useState(false)
@@ -118,18 +205,31 @@ export default function Home() {
 
   // Event log state
   const [events, setEvents] = useState<EventLogEntry[]>([])
-  
-  // Analysis insight state
-  const [currentInsight, setCurrentInsight] = useState<AnalysisInsight | null>(null)
 
-  // Derive training state from currentRun
-  const isTraining = currentRun?.status === 'training' || isCreating || isStarting
-  const isTesting = currentRun?.status === 'evaluating' || isEvaluating
-  const isActive = isTraining || isTesting
+  const selectedEnvironment = useMemo(
+    () => environments.find((environment) => environment.id === selectedEnvId) ?? null,
+    [environments, selectedEnvId]
+  )
+
+  // Derive operation states from current run + network transitions
+  const isTraining =
+    currentRun?.status === 'training' || isCreating || isStarting || isStoppingTraining
+  const isTesting =
+    currentRun?.status === 'evaluating' || isEvaluating || isStoppingEvaluation
+  const isActive =
+    currentRun?.status === 'training' ||
+    currentRun?.status === 'evaluating' ||
+    isStarting ||
+    isEvaluating
   const hasTrainedRun =
     currentRun !== null &&
     currentRun.status !== 'pending' &&
     currentRun.status !== 'failed'
+
+  const trainingProgressPercent = clampPercent(currentRun?.progress?.percent_complete)
+  const testingProgressPercent = clampPercent(
+    evaluationProgress?.percent_complete ?? (currentRun?.status === 'evaluating' ? 0 : undefined)
+  )
 
   // Update metrics from stream
   useEffect(() => {
@@ -140,13 +240,8 @@ export default function Home() {
         loss: streamedMetrics.loss ?? 0,
         fps: streamedMetrics.fps,
       })
-      
-      // Show insight after some training
-      if (streamedMetrics.episode > 10 && !currentInsight) {
-        setCurrentInsight(mockInsight)
-      }
     }
-  }, [streamedMetrics, currentInsight])
+  }, [streamedMetrics])
 
   // Connect streams as soon as we have a run (including pending) so the backend has a
   // subscriber before training starts. This ensures the live feed shows frames from the
@@ -197,9 +292,39 @@ export default function Home() {
   const episode = streamedMetrics?.episode ?? 0
   const currentReward = liveFrame?.totalReward ?? streamedMetrics?.reward ?? 0
   const rewardHistory = streamedRewardHistory.length > 0 ? streamedRewardHistory : []
+  const currentInsight = useMemo<AnalysisInsight | null>(
+    () =>
+      buildAnalysisInsight({
+        run: currentRun,
+        envLabel: selectedEnvironment?.name ?? selectedEnvId ?? 'selected environment',
+        actionSpaceType: selectedEnvironment?.action_space_type ?? 'Unknown',
+        algorithm,
+        rewardHistory,
+        meanReward: metrics.meanReward,
+        episodeLength: metrics.episodeLength,
+        fps: metrics.fps,
+        trainingProgressPercent,
+        testingProgressPercent,
+        currentEvalEpisode: evaluationProgress?.current_episode ?? 0,
+        totalEvalEpisodes: evaluationProgress?.total_episodes ?? DEFAULT_EVAL_EPISODES,
+      }),
+    [
+      currentRun,
+      selectedEnvironment,
+      selectedEnvId,
+      algorithm,
+      rewardHistory,
+      metrics.meanReward,
+      metrics.episodeLength,
+      metrics.fps,
+      trainingProgressPercent,
+      testingProgressPercent,
+      evaluationProgress,
+    ]
+  )
 
   // Add event to log (stored with timestamp for chronological sort)
-  const addEvent = (message: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
+  const addEvent = useCallback((message: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
     const now = new Date()
     const timestamp = now.getTime()
     const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
@@ -207,11 +332,29 @@ export default function Home() {
       { id: `${timestamp}-${Math.random().toString(36).slice(2, 9)}`, time, timestamp, message, type },
       ...prev.slice(0, 49), // Keep last 50 events
     ])
-  }
+  }, [])
+
+  const previousRunStatusRef = useRef<string | null>(null)
+  useEffect(() => {
+    const nextStatus = currentRun?.status ?? null
+    const previousStatus = previousRunStatusRef.current
+    if (!nextStatus || nextStatus === previousStatus) {
+      previousRunStatusRef.current = nextStatus
+      return
+    }
+
+    if (nextStatus === 'completed') addEvent('Training completed', 'success')
+    if (nextStatus === 'failed') addEvent('Run failed', 'error')
+    if (nextStatus === 'stopped' && previousStatus === 'training') addEvent('Training stopped', 'success')
+    if (nextStatus === 'evaluating' && previousStatus !== 'evaluating') addEvent('Evaluation started', 'success')
+    if (previousStatus === 'evaluating' && nextStatus !== 'evaluating') addEvent('Evaluation finished', 'success')
+    previousRunStatusRef.current = nextStatus
+  }, [currentRun?.status, addEvent])
 
   // Handlers
   const handleTrain = async () => {
     if (!selectedEnvId) return
+    if (isTraining || isTesting) return
     
     clearError()
     clearFramesError()
@@ -269,7 +412,7 @@ export default function Home() {
     }
     
     clearError()
-    addEvent('Starting evaluation: 10 episodes...', 'info')
+    addEvent(`Starting evaluation: ${DEFAULT_EVAL_EPISODES} episodes...`, 'info')
     
     try {
       // Connect frames before evaluation so the live feed shows the environment during test
@@ -284,8 +427,7 @@ export default function Home() {
       } catch {
         clearFramesError()
       }
-      await evaluate(10)
-      addEvent('Evaluation started', 'success')
+      await evaluate(DEFAULT_EVAL_EPISODES)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start evaluation'
       addEvent(`Error: ${message}`, 'error')
@@ -295,21 +437,35 @@ export default function Home() {
   const handleStop = async () => {
     if (!currentRun) return
     
+    const mode = currentRun.status === 'evaluating' ? 'evaluation' : 'training'
     clearError()
-    addEvent('Stopping training...', 'info')
+    addEvent(`Stopping ${mode}...`, 'info')
     
     try {
       await stop()
-      addEvent('Training stopped', 'success')
-      disconnectMetrics()
-      disconnectFrames()
+      addEvent(`${mode[0].toUpperCase()}${mode.slice(1)} stop requested`, 'info')
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to stop training'
+      const message = err instanceof Error ? err.message : `Failed to stop ${mode}`
       addEvent(`Error: ${message}`, 'error')
     }
   }
 
-  const handleReset = () => {
+  const handleReset = async () => {
+    clearError()
+    clearFramesError()
+
+    if (currentRun && (currentRun.status === 'training' || currentRun.status === 'evaluating')) {
+      addEvent('Global reset requested: stopping active run...', 'info')
+      try {
+        await Promise.race([
+          stop(),
+          new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+        ])
+      } catch {
+        // Continue reset even if stop API fails.
+      }
+    }
+
     disconnectMetrics()
     disconnectFrames()
     clearMetricsStream()
@@ -321,9 +477,12 @@ export default function Home() {
       fps: 0,
     })
     setIsRecording(false)
-    setCurrentInsight(null)
+    setLearningRate(DEFAULT_LEARNING_RATE)
+    setTotalTimesteps(DEFAULT_TOTAL_TIMESTEPS)
+    setAlgorithm('PPO')
     clearCurrentRun()
-    addEvent('Session reset', 'info')
+    setEvents([])
+    addEvent('Global reset complete', 'info')
   }
 
   const handleGenerateReport = () => {
@@ -373,7 +532,11 @@ export default function Home() {
           onStop={handleStop}
           isTraining={isTraining}
           isTesting={isTesting}
-          isCreatingRun={isCreating}
+          isCreatingRun={isCreating || isStarting}
+          isStoppingTraining={isStoppingTraining}
+          isStoppingTesting={isStoppingEvaluation}
+          trainingProgressPercent={trainingProgressPercent}
+          testingProgressPercent={testingProgressPercent}
           hasTrainedRun={hasTrainedRun}
         />
 
@@ -382,7 +545,7 @@ export default function Home() {
           selectedEnvId={selectedEnvId}
           liveFrame={liveFrame}
           isActive={isActive}
-          isStreamConnected={isMetricsConnected || isFramesConnected}
+          isStreamConnected={isFramesConnected}
           episode={episode}
           currentReward={currentReward}
           metrics={metrics}

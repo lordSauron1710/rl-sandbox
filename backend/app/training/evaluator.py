@@ -11,6 +11,7 @@ This module handles:
 import base64
 import io
 import time
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -168,6 +169,11 @@ class EvaluationRunner:
         
         If video_path is provided, wraps with RecordVideo wrapper.
         """
+        # Evaluations run in background threads; enforce headless SDL drivers so
+        # pygame-backed envs can render safely off-screen.
+        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+
         # Create base environment with rgb_array render mode for recording
         env = gym.make(self.env_id, render_mode="rgb_array")
         

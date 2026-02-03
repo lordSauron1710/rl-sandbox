@@ -81,6 +81,20 @@ This file tracks errors encountered during development so we can avoid repeating
 
 ---
 
+### 1.7 Training live feed WebSocket closed with JSON serialization error
+
+**Symptom:** During training, metrics and run status updated but the Live Feed stayed blank; WebSocket emitted `stream_error` and closed.
+
+**Root cause:** Frame metadata (`reward`, sometimes `episode`/`step`) could be NumPy scalar types (e.g. `float32`) from training callbacks. WebSocket `send_json` cannot serialize NumPy scalar objects directly.
+
+**Fix (latest, working):**
+1. Coerce frame metadata to native Python numbers in `FramesPubSub.publish_frame` before publishing (`int(...)`/`float(...)` with safe fallback).
+2. Also cast training callback values before publishing frames (`float(rewards[0])`, `int(step)`, etc.) so metadata is normalized at source.
+
+**Lesson:** Any value crossing the WS/SSE JSON boundary must be normalized to built-in Python scalars; don’t pass NumPy scalar objects into transport payloads.
+
+---
+
 ## 2. Backend: frame encoding & environment differences
 
 ### 2.1 Render output dtype (float vs uint8)
@@ -98,6 +112,23 @@ img = Image.fromarray(frame)
 Then encode to JPEG as usual. Applied in `backend/app/training/callback.py` (`_maybe_stream_frame`) and `backend/app/training/evaluator.py` (`_render_and_stream_frame`).
 
 **Lesson:** Don’t assume env `render()` return dtype. Normalize (float 0–1 → uint8 0–255, or cast to uint8) in one place so all envs (LunarLander, CartPole, BipedalWalker, etc.) work.
+
+---
+
+### 2.2 macOS crash when rendering pygame envs from background training thread
+
+**Symptom:** Backend process crashed when training frame streaming started (especially CartPole/LunarLander on macOS), with `NSInternalInconsistencyException` about AppKit menu/main-thread usage.
+
+**Root cause:** Pygame/SDL attempted to initialize a native display path from a non-main background thread during server-side rendering.
+
+**Fix (latest, working):** Force SDL headless drivers before creating training/evaluation environments:
+```python
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+```
+Applied in `TrainingRunner._create_env` and `EvaluationRunner._create_env` so render paths stay off-screen and thread-safe for backend workloads.
+
+**Lesson:** For server-side RL rendering, explicitly run SDL in headless mode; never depend on GUI display init from worker threads.
 
 ---
 
@@ -135,6 +166,8 @@ Then encode to JPEG as usual. Applied in `backend/app/training/callback.py` (`_m
 | Backend / encoding    | Float or non-uint8 render output                   | Assumption | Callback + evaluator frame encoding     |
 | Streaming / lifecycle | Metrics SSE closed when status became evaluating   | Logic bug  | SSE active-status check in stream router |
 | Streaming / infra     | Cross-thread asyncio queue publish                 | Concurrency| Training/eval threads -> async subscribers |
+| Streaming / payload   | WebSocket frame metadata used NumPy scalar types   | Type bug   | Frame pub/sub JSON serialization boundary |
+| Backend / rendering   | Pygame SDL/AppKit crash in worker thread (macOS)   | Runtime bug| Training/evaluation env creation for frame streaming |
 | Frontend / state      | Page calling setState for hook-owned state         | API misuse | handleTrain / useTraining               |
 | Frontend / state      | Hook swallowed async errors                         | Flow bug   | useTraining success/error propagation    |
 

@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   ApiRun,
+  EvaluationProgress,
   RunConfig,
   createRun,
+  getEvaluationProgress,
   getRun,
   startTraining,
+  stopEvaluation,
   stopTraining,
   triggerEvaluation,
 } from '@/services/api'
@@ -18,9 +21,11 @@ export interface CreateAndStartOptions {
 
 export interface UseTrainingResult {
   currentRun: ApiRun | null
+  evaluationProgress: EvaluationProgress | null
   isCreating: boolean
   isStarting: boolean
-  isStopping: boolean
+  isStoppingTraining: boolean
+  isStoppingEvaluation: boolean
   isEvaluating: boolean
   error: Error | null
   createAndStartTraining: (config: RunConfig, options?: CreateAndStartOptions) => Promise<void>
@@ -40,9 +45,11 @@ function toError(err: unknown, fallback: string): Error {
  */
 export function useTraining(): UseTrainingResult {
   const [currentRun, setCurrentRun] = useState<ApiRun | null>(null)
+  const [evaluationProgress, setEvaluationProgress] = useState<EvaluationProgress | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
-  const [isStopping, setIsStopping] = useState(false)
+  const [isStoppingTraining, setIsStoppingTraining] = useState(false)
+  const [isStoppingEvaluation, setIsStoppingEvaluation] = useState(false)
   const [isEvaluating, setIsEvaluating] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
@@ -77,17 +84,38 @@ export function useTraining(): UseTrainingResult {
     if (!currentRun) return
     
     setError(null)
-    setIsStopping(true)
-    
+
     try {
-      await stopTraining(currentRun.id)
-      setCurrentRun(prev => prev ? { ...prev, status: 'stopped' } : null)
+      if (currentRun.status === 'evaluating') {
+        setIsStoppingEvaluation(true)
+        await stopEvaluation(currentRun.id)
+        try {
+          const nextRun = await getRun(currentRun.id)
+          setCurrentRun(nextRun)
+        } catch {
+          // Ignore refresh failure; polling effect will reconcile.
+        }
+      } else {
+        setIsStoppingTraining(true)
+        await stopTraining(currentRun.id)
+        try {
+          const nextRun = await getRun(currentRun.id)
+          setCurrentRun(nextRun)
+        } catch {
+          setCurrentRun(prev => prev ? { ...prev, status: 'stopped' } : null)
+        }
+      }
     } catch (err) {
-      const error = toError(err, 'Failed to stop training')
+      const fallback =
+        currentRun.status === 'evaluating'
+          ? 'Failed to stop evaluation'
+          : 'Failed to stop training'
+      const error = toError(err, fallback)
       setError(error)
       throw error
     } finally {
-      setIsStopping(false)
+      setIsStoppingTraining(false)
+      setIsStoppingEvaluation(false)
     }
   }, [currentRun])
 
@@ -99,6 +127,13 @@ export function useTraining(): UseTrainingResult {
     
     try {
       await triggerEvaluation(currentRun.id, nEpisodes)
+      setEvaluationProgress({
+        current_episode: 0,
+        total_episodes: nEpisodes,
+        percent_complete: 0,
+        is_running: true,
+        started_at: new Date().toISOString(),
+      })
       setCurrentRun(prev => prev ? { ...prev, status: 'evaluating' } : null)
     } catch (err) {
       const error = toError(err, 'Failed to start evaluation')
@@ -130,6 +165,9 @@ export function useTraining(): UseTrainingResult {
       try {
         const nextRun = await getRun(runId)
         setCurrentRun(nextRun)
+        if (nextRun.status !== 'evaluating') {
+          setEvaluationProgress(null)
+        }
       } catch {
         // Keep existing state and continue polling.
       }
@@ -140,8 +178,31 @@ export function useTraining(): UseTrainingResult {
     }
   }, [currentRun?.id, currentRun?.status])
 
+  useEffect(() => {
+    if (!currentRun?.id || currentRun.status !== 'evaluating') {
+      return
+    }
+
+    const runId = currentRun.id
+    const interval = window.setInterval(async () => {
+      try {
+        const progress = await getEvaluationProgress(runId)
+        setEvaluationProgress(progress)
+      } catch {
+        // 404/no active evaluation is expected during handoff back to completed/stopped.
+      }
+    }, 1000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [currentRun?.id, currentRun?.status])
+
   const clearCurrentRun = useCallback(() => {
     setCurrentRun(null)
+    setEvaluationProgress(null)
+    setIsStoppingTraining(false)
+    setIsStoppingEvaluation(false)
   }, [])
 
   const clearError = useCallback(() => {
@@ -150,9 +211,11 @@ export function useTraining(): UseTrainingResult {
 
   return {
     currentRun,
+    evaluationProgress,
     isCreating,
     isStarting,
-    isStopping,
+    isStoppingTraining,
+    isStoppingEvaluation,
     isEvaluating,
     error,
     createAndStartTraining,

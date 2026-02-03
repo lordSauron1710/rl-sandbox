@@ -70,6 +70,14 @@ export interface ApiRun {
   completed_at: string | null
 }
 
+export interface EvaluationProgress {
+  current_episode: number
+  total_episodes: number
+  percent_complete: number
+  is_running: boolean
+  started_at: string
+}
+
 /**
  * Fetch all environments from the backend
  */
@@ -153,6 +161,36 @@ export async function triggerEvaluation(
   if (!response.ok) {
     throw new Error(
       await getErrorMessage(response, `Failed to trigger evaluation: ${response.statusText}`)
+    )
+  }
+  return response.json()
+}
+
+/**
+ * Stop evaluation for a run
+ */
+export async function stopEvaluation(runId: string): Promise<{ id: string; status: string; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/runs/${runId}/evaluate/stop`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(response, `Failed to stop evaluation: ${response.statusText}`)
+    )
+  }
+  return response.json()
+}
+
+/**
+ * Get active evaluation progress for a run
+ */
+export async function getEvaluationProgress(runId: string): Promise<EvaluationProgress> {
+  const response = await fetch(`${API_BASE_URL}/runs/${runId}/evaluate/progress`, {
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(response, `Failed to fetch evaluation progress: ${response.statusText}`)
     )
   }
   return response.json()

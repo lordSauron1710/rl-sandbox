@@ -5,8 +5,8 @@ import { ButtonHTMLAttributes, forwardRef } from 'react'
 interface LoadingButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   isLoading?: boolean
   loadingText?: string
-  variant?: 'primary' | 'secondary'
-  progress?: number // 0-100 for progress ring
+  variant?: 'primary' | 'secondary' | 'danger'
+  progress?: number // 0-100 determinate background progress
 }
 
 /**
@@ -15,8 +15,15 @@ interface LoadingButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export const LoadingButton = forwardRef<HTMLButtonElement, LoadingButtonProps>(
   ({ children, isLoading, loadingText, variant = 'primary', disabled, className = '', progress, ...props }, ref) => {
     const baseClasses = 'btn relative overflow-visible'
-    const variantClasses = variant === 'primary' ? 'btn-primary' : 'btn-secondary'
+    const variantClasses =
+      variant === 'primary'
+        ? 'btn-primary'
+        : variant === 'danger'
+        ? 'bg-red-600 border-red-600 text-white hover:bg-red-700'
+        : 'btn-secondary'
     const disabledClasses = (disabled || isLoading) ? 'cursor-not-allowed' : ''
+    const hasProgress = Number.isFinite(progress)
+    const clampedProgress = Math.max(0, Math.min(100, Number(progress ?? 0)))
 
     return (
       <div className="relative inline-block w-full">
@@ -26,17 +33,35 @@ export const LoadingButton = forwardRef<HTMLButtonElement, LoadingButtonProps>(
           disabled={disabled || isLoading}
           {...props}
         >
-          {/* Glowing gradient fill progress bar */}
-          {isLoading && (
+          {/* Determinate progress fill for long-running operations */}
+          {hasProgress && (
+            <div className="absolute inset-0 overflow-hidden rounded-full">
+              <div
+                className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ease-out"
+                style={{
+                  width: `${clampedProgress}%`,
+                  background:
+                    variant === 'danger'
+                      ? 'rgba(255, 255, 255, 0.2)'
+                      : variant === 'primary'
+                      ? 'rgba(255, 255, 255, 0.2)'
+                      : 'rgba(0, 0, 0, 0.08)',
+                }}
+              />
+            </div>
+          )}
+
+          {/* Indeterminate shimmer while awaiting network round-trip */}
+          {isLoading && !hasProgress && (
             <div className="absolute inset-0 overflow-hidden rounded-full">
               <div 
                 className="absolute inset-0 rounded-full animate-progress-fill"
                 style={{
-                  background: variant === 'primary' 
+                  background: variant === 'primary' || variant === 'danger'
                     ? 'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%)'
                     : 'linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0) 100%)',
                   width: '200%',
-                  boxShadow: variant === 'primary'
+                  boxShadow: variant === 'primary' || variant === 'danger'
                     ? '0 0 20px rgba(255,255,255,0.5)'
                     : '0 0 20px rgba(0,0,0,0.3)',
                 }}

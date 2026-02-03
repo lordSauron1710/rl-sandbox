@@ -279,13 +279,32 @@ class FramesPubSub(BasePubSub):
         if timestamp is None:
             timestamp = datetime.now(timezone.utc).isoformat()
 
+        # Coerce potential numpy scalar metadata into native Python numbers so
+        # WebSocket JSON serialization never fails.
+        try:
+            episode_value = int(episode)
+        except (TypeError, ValueError):
+            episode_value = 0
+        try:
+            step_value = int(step)
+        except (TypeError, ValueError):
+            step_value = 0
+        try:
+            reward_value = float(reward)
+        except (TypeError, ValueError):
+            reward_value = 0.0
+        try:
+            total_reward_value = float(total_reward)
+        except (TypeError, ValueError):
+            total_reward_value = 0.0
+
         msg = FrameMessage(
             data=frame_data,
             timestamp=timestamp,
-            episode=episode,
-            step=step,
-            reward=reward,
-            total_reward=total_reward,
+            episode=episode_value,
+            step=step_value,
+            reward=reward_value,
+            total_reward=total_reward_value,
         )
         self.publish(run_id, msg)
         self._last_frame_time[run_id] = current_time
@@ -295,8 +314,8 @@ class FramesPubSub(BasePubSub):
         msg = {
             "type": "status",
             "status": status,
-            "episode": episode,
-            "timestep": timestep,
+            "episode": int(episode),
+            "timestep": int(timestep),
         }
         self.publish(run_id, msg)
 

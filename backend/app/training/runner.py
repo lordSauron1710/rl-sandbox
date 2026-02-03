@@ -8,6 +8,7 @@ This module handles:
 - Saving model checkpoints
 """
 from typing import Optional, Callable, Any, Dict
+import os
 
 import gymnasium as gym
 from stable_baselines3 import PPO, DQN
@@ -91,6 +92,12 @@ class TrainingRunner:
 
     def _create_env(self, render_mode: str = "rgb_array") -> gym.Env:
         """Create and configure the Gymnasium environment."""
+        # Training/eval run in background threads. On macOS, pygame-backed envs
+        # can crash if they try to bind AppKit display objects outside the main
+        # thread. Force SDL dummy drivers for server-side RGB rendering.
+        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+
         env = gym.make(self.env_id, render_mode=render_mode)
         if self.seed is not None:
             env.reset(seed=self.seed)

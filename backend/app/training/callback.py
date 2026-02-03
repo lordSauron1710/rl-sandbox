@@ -139,7 +139,7 @@ class MetricsCallback(BaseCallback):
         # Track step reward for frame metadata
         rewards = self.locals.get("rewards", [])
         if len(rewards) > 0:
-            self.current_episode_reward += rewards[0]
+            self.current_episode_reward += float(rewards[0])
         self.current_step_in_episode += 1
 
         # Check for completed episodes in info
@@ -283,9 +283,9 @@ class MetricsCallback(BaseCallback):
             self.frames_pubsub.publish_frame(
                 run_id=self.run_id,
                 frame_data=frame_data,
-                episode=self.episode_count,
-                step=self.current_step_in_episode,
-                reward=self.current_episode_reward,
+                episode=int(self.episode_count),
+                step=int(self.current_step_in_episode),
+                reward=float(self.current_episode_reward),
                 total_reward=float(np.mean(self.episode_rewards)) if self.episode_rewards else 0.0,
             )
 
