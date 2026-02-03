@@ -6,6 +6,7 @@ import {
   LeftSidebar,
   CenterPanel,
   RightSidebar,
+  ReportWorkflow,
   type Metrics,
   type AlgorithmInfo,
   type AnalysisInsight,
@@ -18,12 +19,18 @@ import {
   useEventLog,
 } from '@/hooks'
 import {
-  ApiRun,
   EvaluationSummary,
   getLatestEvaluation,
   getLatestEvaluationVideoUrl,
   toAbsoluteApiUrl,
 } from '@/services/api'
+import { buildAnalysisInsight } from '@/services/insightsEngine'
+import {
+  buildGeneratedReport,
+  downloadReportFile,
+  type GeneratedReport,
+  type ReportFormat,
+} from '@/services/reportGenerator'
 
 // Algorithm explanations
 const algorithmExplanations: Record<string, AlgorithmInfo> = {
@@ -57,144 +64,6 @@ function parseTimesteps(value: string): number {
 function clampPercent(value: number | undefined): number {
   if (!Number.isFinite(value)) return 0
   return Math.max(0, Math.min(100, value as number))
-}
-
-function mean(values: number[]): number {
-  if (values.length === 0) return 0
-  return values.reduce((sum, value) => sum + value, 0) / values.length
-}
-
-function stdDev(values: number[]): number {
-  if (values.length < 2) return 0
-  const avg = mean(values)
-  const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length
-  return Math.sqrt(variance)
-}
-
-function buildAnalysisInsight({
-  run,
-  envLabel,
-  actionSpaceType,
-  algorithm,
-  rewardHistory,
-  meanReward,
-  episodeLength,
-  fps,
-  trainingProgressPercent,
-  testingProgressPercent,
-  currentEvalEpisode,
-  totalEvalEpisodes,
-}: {
-  run: ApiRun | null
-  envLabel: string
-  actionSpaceType: 'Discrete' | 'Continuous' | 'Unknown'
-  algorithm: string
-  rewardHistory: number[]
-  meanReward: number
-  episodeLength: number
-  fps: number
-  trainingProgressPercent: number
-  testingProgressPercent: number
-  currentEvalEpisode: number
-  totalEvalEpisodes: number
-}): AnalysisInsight | null {
-  if (!run) return null
-
-  const mode = run.status === 'evaluating' ? 'EVALUATION' : 'TRAINING'
-  const progressPercent =
-    run.status === 'evaluating' ? testingProgressPercent : trainingProgressPercent
-  const progressText = `${Math.round(progressPercent)}%`
-
-  if (rewardHistory.length < 5) {
-    return {
-      title: `${mode} EXPLORATION PHASE`,
-      paragraphs: [
-        `${algorithm} on ${envLabel} is collecting early episodes (${actionSpaceType} action space). Progress is ${progressText} while policy behavior is still exploratory.`,
-        `Telemetry snapshot: mean reward ${meanReward.toFixed(1)}, episode length ${episodeLength}, stream FPS ${fps}.`,
-        'Recommendation: keep running until at least 10 episodes before making hyperparameter changes.',
-      ],
-    }
-  }
-
-  const windowSize = Math.min(12, rewardHistory.length)
-  const recentWindow = rewardHistory.slice(-windowSize)
-  const previousWindow = rewardHistory.slice(-windowSize * 2, -windowSize)
-
-  const recentMean = mean(recentWindow)
-  const previousMean = previousWindow.length > 0 ? mean(previousWindow) : recentMean
-  const delta = recentMean - previousMean
-  const volatility = stdDev(recentWindow)
-  const convergenceThreshold = Math.max(0.75, Math.abs(recentMean) * 0.05)
-  const stableVolatilityThreshold = Math.max(2, Math.abs(recentMean) * 0.1)
-  const highVarianceThreshold = Math.max(6, Math.abs(recentMean) * 0.28)
-
-  const isConverging =
-    run.status !== 'evaluating' &&
-    progressPercent >= 40 &&
-    Math.abs(delta) <= convergenceThreshold &&
-    volatility <= stableVolatilityThreshold
-
-  const isHighVariance = volatility >= highVarianceThreshold
-  const isPlateaued = run.status !== 'evaluating' && progressPercent >= 30 && delta <= 0
-
-  if (run.status === 'evaluating') {
-    return {
-      title: 'GENERALIZATION CHECK',
-      paragraphs: [
-        `Evaluation is ${progressText} complete (${Math.max(0, currentEvalEpisode)}/${Math.max(1, totalEvalEpisodes)} episodes). Recent return mean is ${recentMean.toFixed(1)}.`,
-        `Observed variance is ${volatility.toFixed(1)} across the latest ${windowSize} episodes, indicating ${isHighVariance ? 'unstable' : 'consistent'} policy behavior.`,
-        isHighVariance
-          ? 'Recommendation: increase training timesteps and reduce learning rate before the next evaluation pass.'
-          : 'Recommendation: policy appears portable; run a longer evaluation set to confirm stability.',
-      ],
-    }
-  }
-
-  if (isConverging) {
-    return {
-      title: 'CONVERGENCE DETECTED',
-      paragraphs: [
-        `Recent reward mean (${recentMean.toFixed(1)}) is flat against the prior window (delta ${delta.toFixed(1)}), and volatility has reduced to ${volatility.toFixed(1)}.`,
-        `Episode length is ${episodeLength} with stream FPS at ${fps}. This is a stable behavior signature for ${algorithm}.`,
-        'Recommendation: keep current hyperparameters and extend total timesteps to solidify policy consistency.',
-      ],
-    }
-  }
-
-  if (isHighVariance) {
-    return {
-      title: 'HIGH VARIANCE POLICY',
-      paragraphs: [
-        `Reward swing is elevated (${volatility.toFixed(1)} std over ${windowSize} episodes) with mean ${recentMean.toFixed(1)} and trend delta ${delta.toFixed(1)}.`,
-        `Behavior suggests unstable exploration/exploitation balance for ${algorithm} on ${envLabel}.`,
-        actionSpaceType === 'Continuous'
-          ? 'Recommendation: lower learning rate and increase rollout horizon; continuous control benefits from smoother policy updates.'
-          : 'Recommendation: lower learning rate or increase replay/batch coverage to reduce oscillation.',
-      ],
-    }
-  }
-
-  if (isPlateaued) {
-    return {
-      title: 'PLATEAU PATTERN',
-      paragraphs: [
-        `Recent mean (${recentMean.toFixed(1)}) is not improving versus prior episodes (delta ${delta.toFixed(1)}).`,
-        `Training progress is ${progressText} (${run.progress?.current_timestep ?? 0}/${run.progress?.total_timesteps ?? 0} timesteps).`,
-        algorithm === 'DQN'
-          ? 'Recommendation: extend timesteps and reduce learning rate; if still stuck, tune exploration_fraction for better coverage.'
-          : 'Recommendation: consider reward shaping or adjusting batch/n_steps to escape the local optimum.',
-      ],
-    }
-  }
-
-  return {
-    title: 'LEARNING TREND DETECTED',
-    paragraphs: [
-      `Recent reward mean is ${recentMean.toFixed(1)} with delta ${delta.toFixed(1)} over the prior ${windowSize}-episode window.`,
-      `Volatility is ${volatility.toFixed(1)} and episode length is ${episodeLength}; live FPS is ${fps}.`,
-      'Recommendation: continue current run and reassess after another 10-20 episodes for clearer policy direction.',
-    ],
-  }
 }
 
 export default function Home() {
@@ -275,6 +144,8 @@ export default function Home() {
     null
   )
   const [playbackError, setPlaybackError] = useState<string | null>(null)
+  const [generatedReports, setGeneratedReports] = useState<GeneratedReport[]>([])
+  const [isReportWorkflowOpen, setIsReportWorkflowOpen] = useState(false)
 
   const selectedEnvironment = useMemo(
     () => environments.find((environment) => environment.id === selectedEnvId) ?? null,
@@ -524,6 +395,8 @@ export default function Home() {
         testingProgressPercent,
         currentEvalEpisode: evaluationProgress?.current_episode ?? 0,
         totalEvalEpisodes: evaluationProgress?.total_episodes ?? DEFAULT_EVAL_EPISODES,
+        learningRate,
+        totalTimesteps,
       }),
     [
       currentRun,
@@ -537,6 +410,8 @@ export default function Home() {
       trainingProgressPercent,
       testingProgressPercent,
       evaluationProgress,
+      learningRate,
+      totalTimesteps,
     ]
   )
 
@@ -706,46 +581,88 @@ export default function Home() {
     addLocalEvent('Generating report...', 'info', 'report_requested')
 
     try {
-      const generatedAt = new Date()
-      const timestampTag = generatedAt.toISOString().replace(/[:.]/g, '-')
-      const runSegment = currentRun?.id.slice(0, 8) ?? 'session'
-      const fileName = `rl-report-${runSegment}-${timestampTag}.json`
-
-      const report = {
-        generated_at: generatedAt.toISOString(),
+      const report = buildGeneratedReport({
         run: currentRun,
-        selected_environment: selectedEnvironment,
+        selectedEnvironment,
         algorithm,
         hyperparameters: {
-          learning_rate: learningRate,
-          total_timesteps: totalTimesteps,
+          learningRate,
+          totalTimesteps,
         },
         metrics,
-        reward_history_last_100: rewardHistory,
+        rewardHistory,
         insight: currentInsight,
-        latest_evaluation_summary: latestEvaluationSummary,
-        evaluation_playback_url: evaluationPlaybackUrl,
-        playback_error: playbackError,
-        events: events.slice(0, 200),
-      }
-
-      const blob = new Blob([JSON.stringify(report, null, 2)], {
-        type: 'application/json',
+        latestEvaluationSummary,
+        evaluationPlaybackUrl,
+        playbackError,
+        events,
       })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = fileName
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      URL.revokeObjectURL(url)
+      setGeneratedReports((prev) => [report, ...prev].slice(0, 25))
 
-      addLocalEvent(`Report generated (${fileName})`, 'success', 'report_generated')
+      addLocalEvent(
+        `Report generated: ${report.reportLabel}. Use VIEW to inspect or the download icon for quick export.`,
+        'success',
+        'report_generated'
+      )
     } catch {
       addLocalEvent('Failed to generate report', 'error', 'error')
     }
   }
+
+  const handleOpenReports = useCallback(() => {
+    if (generatedReports.length === 0) {
+      addLocalEvent('No generated reports yet. Click GENERATE REPORT first.', 'warning', 'warning')
+      return
+    }
+    setIsReportWorkflowOpen(true)
+  }, [addLocalEvent, generatedReports.length])
+
+  const handleDownloadReport = useCallback(
+    (report: GeneratedReport, format: ReportFormat) => {
+      if (format === 'json') {
+        downloadReportFile(report.jsonFileName, report.jsonContent, 'application/json')
+        addLocalEvent(`Downloaded ${report.jsonFileName}`, 'info', 'report_downloaded')
+        return
+      }
+      downloadReportFile(report.textFileName, report.textContent, 'text/plain;charset=utf-8')
+      addLocalEvent(`Downloaded ${report.textFileName}`, 'info', 'report_downloaded')
+    },
+    [addLocalEvent]
+  )
+
+  const handleQuickDownloadLatest = useCallback(() => {
+    const latest = generatedReports[0]
+    if (!latest) {
+      addLocalEvent('No generated reports yet. Click GENERATE REPORT first.', 'warning', 'warning')
+      return
+    }
+    handleDownloadReport(latest, 'json')
+  }, [addLocalEvent, generatedReports, handleDownloadReport])
+
+  const handleDeleteReport = useCallback(
+    (report: GeneratedReport) => {
+      const confirmed = window.confirm(`Delete report "${report.reportLabel}"?`)
+      if (!confirmed) return
+
+      setGeneratedReports((prev) => prev.filter((candidate) => candidate.id !== report.id))
+      addLocalEvent(`Deleted report: ${report.reportLabel}`, 'info', 'report_deleted')
+    },
+    [addLocalEvent]
+  )
+
+  const handleDeleteAllReports = useCallback(() => {
+    if (generatedReports.length === 0) {
+      addLocalEvent('No reports to delete.', 'warning', 'warning')
+      return
+    }
+
+    const confirmed = window.confirm(`Delete all ${generatedReports.length} generated reports?`)
+    if (!confirmed) return
+
+    const count = generatedReports.length
+    setGeneratedReports([])
+    addLocalEvent(`Deleted all reports (${count}).`, 'info', 'report_deleted')
+  }, [addLocalEvent, generatedReports])
 
   return (
     <>
@@ -817,10 +734,22 @@ export default function Home() {
           insight={currentInsight || undefined}
           events={events}
           onGenerateReport={handleGenerateReport}
+          onOpenReports={handleOpenReports}
+          onQuickDownload={handleQuickDownloadLatest}
+          hasReports={generatedReports.length > 0}
           isEventsConnected={isEventsConnected}
           eventsError={eventsError?.message ?? null}
         />
       </main>
+
+      <ReportWorkflow
+        isOpen={isReportWorkflowOpen}
+        reports={generatedReports}
+        onClose={() => setIsReportWorkflowOpen(false)}
+        onDownload={handleDownloadReport}
+        onDelete={handleDeleteReport}
+        onDeleteAll={handleDeleteAllReports}
+      />
     </>
   )
 }

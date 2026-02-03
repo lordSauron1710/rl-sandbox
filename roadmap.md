@@ -381,7 +381,7 @@ Integrate evaluation playback into the Live Feed panel.
 ---
 
 ### Prompt 14 — Analysis insights engine (v0)
-// NOT STARTED
+// EXECUTED
 
 Implement basic analysis insights for the Analysis & Explainer panel.
 

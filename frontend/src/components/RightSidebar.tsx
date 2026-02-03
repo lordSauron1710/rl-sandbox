@@ -7,6 +7,9 @@ interface RightSidebarProps {
   insight?: AnalysisInsight
   events: EventLogEntry[]
   onGenerateReport: () => void
+  onOpenReports: () => void
+  onQuickDownload: () => void
+  hasReports: boolean
   isEventsConnected?: boolean
   eventsError?: string | null
 }
@@ -16,6 +19,9 @@ export function RightSidebar(props: RightSidebarProps) {
     insight,
     events,
     onGenerateReport,
+    onOpenReports,
+    onQuickDownload,
+    hasReports,
     isEventsConnected = false,
     eventsError = null,
   } = props
@@ -26,7 +32,13 @@ export function RightSidebar(props: RightSidebarProps) {
         <span className="label m-0">ANALYSIS & EXPLAINER</span>
       </div>
 
-      <AnalysisPanel insight={insight} onGenerateReport={onGenerateReport} />
+      <AnalysisPanel
+        insight={insight}
+        onGenerateReport={onGenerateReport}
+        onOpenReports={onOpenReports}
+        onQuickDownload={onQuickDownload}
+        hasReports={hasReports}
+      />
 
       <div className="panel-header border-t border-border">
         <div className="flex items-center justify-between gap-2">

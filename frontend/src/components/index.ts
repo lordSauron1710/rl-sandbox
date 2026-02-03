@@ -5,6 +5,7 @@ export { CenterPanel } from './CenterPanel'
 export { RightSidebar } from './RightSidebar'
 export { AnalysisPanel } from './AnalysisPanel'
 export { EventLog } from './EventLog'
+export { ReportWorkflow } from './ReportWorkflow'
 
 // UI components
 export { LoadingButton, LoadingSpinner, LoadingRing } from './LoadingButton'
