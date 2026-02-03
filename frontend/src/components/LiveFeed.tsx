@@ -10,6 +10,7 @@ interface LiveFeedProps {
   
   // Live frame from WebSocket
   liveFrame: LiveFrameState | null
+  playbackVideoUrl?: string | null
   
   // Status
   isActive: boolean  // Training or evaluating
@@ -20,23 +21,23 @@ interface LiveFeedProps {
   currentReward: number
   
   // Controls
-  isRecording: boolean
-  onToggleRecording: () => void
   onReset: () => void
+  onPlaybackError?: () => void
 }
 
 export function LiveFeed({
   selectedEnvId,
   liveFrame,
+  playbackVideoUrl = null,
   isActive,
   isConnected,
   episode,
   currentReward,
-  isRecording,
-  onToggleRecording,
   onReset,
+  onPlaybackError,
 }: LiveFeedProps) {
   const [previewError, setPreviewError] = useState(false)
+  const [playbackError, setPlaybackError] = useState(false)
   const previewUrl = selectedEnvId ? getEnvironmentPreviewUrl(selectedEnvId) : null
   
   // Reset preview error when environment changes
@@ -44,10 +45,16 @@ export function LiveFeed({
     setPreviewError(false)
   }, [selectedEnvId])
 
+  // Reset playback error when playback source changes
+  useEffect(() => {
+    setPlaybackError(false)
+  }, [playbackVideoUrl])
+
   // Determine what to display
-  const showLiveFrame = isActive && liveFrame?.frameData
-  const showPreview = !isActive && selectedEnvId && !previewError
-  const showPlaceholder = !showLiveFrame && !showPreview
+  const showLiveFrame = isActive && !!liveFrame?.frameData
+  const showPlayback = !isActive && !!playbackVideoUrl && !playbackError
+  const showPreview = !isActive && !showPlayback && selectedEnvId && !previewError
+  const showPlaceholder = !showLiveFrame && !showPreview && !showPlayback
 
   return (
     <>
@@ -62,15 +69,14 @@ export function LiveFeed({
                 {isConnected ? 'LIVE' : 'CONNECTING...'}
               </span>
             )}
+            {!isActive && showPlayback && (
+              <span className="inline-flex items-center gap-1 text-[9px] uppercase text-blue-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                Playback
+              </span>
+            )}
           </div>
           <div className="flex gap-2">
-            <button
-              className={`btn btn-secondary w-auto px-3 py-1 text-[10px] ${isRecording ? 'bg-red-100 border-red-500 text-red-600' : ''}`}
-              onClick={onToggleRecording}
-              disabled={!isActive}
-            >
-              {isRecording ? 'Stop Rec' : 'Record'}
-            </button>
             <button
               className="btn btn-secondary w-auto px-3 py-1 text-[10px]"
               onClick={onReset}
@@ -93,6 +99,23 @@ export function LiveFeed({
           />
         )}
 
+        {/* Evaluation video playback (post-evaluation) */}
+        {showPlayback && playbackVideoUrl && (
+          <video
+            key={playbackVideoUrl}
+            src={playbackVideoUrl}
+            className="max-w-full max-h-full object-contain"
+            controls
+            autoPlay
+            loop
+            playsInline
+            onError={() => {
+              setPlaybackError(true)
+              onPlaybackError?.()
+            }}
+          />
+        )}
+
         {/* Environment Preview (Idle State) */}
         {showPreview && previewUrl && (
           <img
@@ -108,6 +131,7 @@ export function LiveFeed({
           <PlaceholderVisualization
             hasSelectedEnv={!!selectedEnvId}
             previewFailed={!!selectedEnvId && previewError}
+            playbackFailed={!!playbackVideoUrl && playbackError}
           />
         )}
 
@@ -140,9 +164,11 @@ export function LiveFeed({
 function PlaceholderVisualization({
   hasSelectedEnv,
   previewFailed,
+  playbackFailed,
 }: {
   hasSelectedEnv: boolean
   previewFailed: boolean
+  playbackFailed?: boolean
 }) {
   return (
     <div className="flex flex-col items-center justify-center text-white/50 px-4 text-center">
@@ -169,6 +195,12 @@ function PlaceholderVisualization({
         <>
           <p className="text-xs uppercase tracking-wider text-amber-400/90">Preview unavailable</p>
           <p className="text-[10px] mt-1">Start the backend to see previews: run <code className="bg-white/10 px-1 rounded">make backend</code> in a terminal</p>
+        </>
+      )}
+      {playbackFailed && (
+        <>
+          <p className="text-xs uppercase tracking-wider text-amber-400/90">Playback unavailable</p>
+          <p className="text-[10px] mt-1">Latest evaluation video could not be loaded.</p>
         </>
       )}
     </div>

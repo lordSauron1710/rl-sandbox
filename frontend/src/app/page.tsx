@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Header,
   LeftSidebar,
@@ -17,7 +17,13 @@ import {
   useLiveFrames,
   useEventLog,
 } from '@/hooks'
-import { ApiRun } from '@/services/api'
+import {
+  ApiRun,
+  EvaluationSummary,
+  getLatestEvaluation,
+  getLatestEvaluationVideoUrl,
+  toAbsoluteApiUrl,
+} from '@/services/api'
 
 // Algorithm explanations
 const algorithmExplanations: Record<string, AlgorithmInfo> = {
@@ -256,9 +262,6 @@ export default function Home() {
   const [learningRate, setLearningRate] = useState(DEFAULT_LEARNING_RATE)
   const [totalTimesteps, setTotalTimesteps] = useState(DEFAULT_TOTAL_TIMESTEPS)
 
-  // Training UI state
-  const [isRecording, setIsRecording] = useState(false)
-
   // Metrics state (local fallback + computed from stream)
   const [metrics, setMetrics] = useState<Metrics>({
     meanReward: 0,
@@ -266,11 +269,125 @@ export default function Home() {
     loss: 0,
     fps: 0,
   })
+  const [latestEvaluationSummary, setLatestEvaluationSummary] =
+    useState<EvaluationSummary | null>(null)
+  const [evaluationPlaybackUrl, setEvaluationPlaybackUrl] = useState<string | null>(
+    null
+  )
+  const [playbackError, setPlaybackError] = useState<string | null>(null)
 
   const selectedEnvironment = useMemo(
     () => environments.find((environment) => environment.id === selectedEnvId) ?? null,
     [environments, selectedEnvId]
   )
+  const currentRunIdRef = useRef<string | null>(null)
+  const previousRunStatusRef = useRef<string | null>(null)
+  const evaluationRequestedAtRef = useRef<number | null>(null)
+  const evaluationFetchInFlightRef = useRef(false)
+
+  const resolvePlaybackUrl = useCallback(
+    (runId: string, summary: EvaluationSummary) => {
+      const candidatePath =
+        summary.video_path ??
+        (summary.num_episodes > 0 ? getLatestEvaluationVideoUrl(runId) : null)
+
+      if (!candidatePath) {
+        return null
+      }
+
+      const absolute = toAbsoluteApiUrl(candidatePath)
+      const summaryTimestamp = Date.parse(summary.timestamp)
+      const cacheKey = Number.isFinite(summaryTimestamp)
+        ? summaryTimestamp.toString()
+        : Date.now().toString()
+      const separator = absolute.includes('?') ? '&' : '?'
+      return `${absolute}${separator}t=${cacheKey}`
+    },
+    []
+  )
+
+  const refreshEvaluationPlayback = useCallback(
+    async (runId: string, options?: { logCompletion?: boolean }) => {
+      if (evaluationFetchInFlightRef.current) {
+        return
+      }
+
+      evaluationFetchInFlightRef.current = true
+      try {
+        const summary = await getLatestEvaluation(runId)
+        if (currentRunIdRef.current !== runId) {
+          return
+        }
+        const requestedAt = evaluationRequestedAtRef.current
+        const summaryTimestamp = Date.parse(summary.timestamp)
+
+        if (
+          requestedAt &&
+          Number.isFinite(summaryTimestamp) &&
+          summaryTimestamp + 1500 < requestedAt
+        ) {
+          // Stale summary from an older evaluation; keep waiting for fresh artifacts.
+          if (options?.logCompletion) {
+            addLocalEvent(
+              'Evaluation finished but latest summary is stale; playback unavailable.',
+              'warning',
+              'warning'
+            )
+          }
+          return
+        }
+
+        setLatestEvaluationSummary(summary)
+        setMetrics({
+          meanReward: summary.mean_reward,
+          episodeLength: Math.round(summary.mean_length),
+          loss: 0,
+          fps: 0,
+        })
+
+        const playbackUrl = resolvePlaybackUrl(runId, summary)
+        setEvaluationPlaybackUrl(playbackUrl)
+        setPlaybackError(null)
+        evaluationRequestedAtRef.current = null
+
+        if (options?.logCompletion) {
+          addLocalEvent(
+            `Evaluation complete: ${summary.num_episodes} episodes (mean reward ${summary.mean_reward.toFixed(1)})`,
+            'success',
+            'evaluation_completed'
+          )
+          if (!playbackUrl) {
+            addLocalEvent(
+              'Evaluation summary available but no MP4 artifact was found.',
+              'warning',
+              'warning'
+            )
+          }
+        }
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to load evaluation summary'
+        setPlaybackError(message)
+        setEvaluationPlaybackUrl(null)
+        if (options?.logCompletion) {
+          addLocalEvent(
+            `Evaluation finished but summary fetch failed: ${message}`,
+            'warning',
+            'warning'
+          )
+        }
+      } finally {
+        evaluationFetchInFlightRef.current = false
+      }
+    },
+    [addLocalEvent, resolvePlaybackUrl]
+  )
+
+  useEffect(() => {
+    currentRunIdRef.current = currentRun?.id ?? null
+  }, [currentRun?.id])
 
   // Derive operation states from current run + network transitions
   const isTraining =
@@ -294,6 +411,9 @@ export default function Home() {
 
   // Update metrics from stream
   useEffect(() => {
+    if (evaluationPlaybackUrl && !isActive) {
+      return
+    }
     if (streamedMetrics) {
       setMetrics({
         meanReward: streamedMetrics.reward,
@@ -302,7 +422,7 @@ export default function Home() {
         fps: streamedMetrics.fps,
       })
     }
-  }, [streamedMetrics])
+  }, [streamedMetrics, evaluationPlaybackUrl, isActive])
 
   // Connect streams as soon as we have a run (including pending) so the backend has a
   // subscriber before training starts. This ensures the live feed shows frames from the
@@ -359,9 +479,35 @@ export default function Home() {
     }
   }, [disconnectMetrics, disconnectFrames, disconnectEvents])
 
+  useEffect(() => {
+    const previousStatus = previousRunStatusRef.current
+    const nextStatus = currentRun?.status ?? null
+
+    if (
+      currentRun?.id &&
+      previousStatus === 'evaluating' &&
+      nextStatus !== null &&
+      nextStatus !== 'evaluating'
+    ) {
+      void refreshEvaluationPlayback(currentRun.id, { logCompletion: true })
+    }
+
+    previousRunStatusRef.current = nextStatus
+  }, [currentRun?.id, currentRun?.status, refreshEvaluationPlayback])
+
   // Computed values from stream or local state
-  const episode = streamedMetrics?.episode ?? 0
-  const currentReward = liveFrame?.totalReward ?? streamedMetrics?.reward ?? 0
+  const isPlaybackMode = !isActive && !!evaluationPlaybackUrl
+  const episode = isPlaybackMode
+    ? latestEvaluationSummary?.num_episodes ?? 0
+    : liveFrame?.episode ??
+      (currentRun?.status === 'evaluating'
+        ? evaluationProgress?.current_episode
+        : undefined) ??
+      streamedMetrics?.episode ??
+      0
+  const currentReward = isPlaybackMode
+    ? latestEvaluationSummary?.mean_reward ?? 0
+    : liveFrame?.totalReward ?? streamedMetrics?.reward ?? 0
   const rewardHistory = streamedRewardHistory.length > 0 ? streamedRewardHistory : []
   const currentInsight = useMemo<AnalysisInsight | null>(
     () =>
@@ -394,6 +540,13 @@ export default function Home() {
     ]
   )
 
+  const handlePlaybackError = useCallback(() => {
+    if (!playbackError) {
+      addLocalEvent('Evaluation playback unavailable.', 'warning', 'warning')
+    }
+    setPlaybackError('Failed to load evaluation playback.')
+  }, [addLocalEvent, playbackError])
+
   // Handlers
   const handleTrain = async () => {
     if (!selectedEnvId) return
@@ -401,6 +554,10 @@ export default function Home() {
     
     clearError()
     clearFramesError()
+    setLatestEvaluationSummary(null)
+    setEvaluationPlaybackUrl(null)
+    setPlaybackError(null)
+    evaluationRequestedAtRef.current = null
     addLocalEvent(`Starting training [${algorithm}]...`, 'info', 'training_requested')
     
     try {
@@ -452,6 +609,9 @@ export default function Home() {
     }
     
     clearError()
+    setEvaluationPlaybackUrl(null)
+    setPlaybackError(null)
+    evaluationRequestedAtRef.current = Date.now()
     addLocalEvent(
       `Starting evaluation: ${DEFAULT_EVAL_EPISODES} episodes...`,
       'info',
@@ -473,6 +633,11 @@ export default function Home() {
         clearFramesError()
       }
       await evaluate(DEFAULT_EVAL_EPISODES)
+      addLocalEvent(
+        `Evaluation started: ${DEFAULT_EVAL_EPISODES} episodes`,
+        'success',
+        'evaluation_started'
+      )
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start evaluation'
       addLocalEvent(`Error: ${message}`, 'error', 'error')
@@ -525,10 +690,13 @@ export default function Home() {
       loss: 0,
       fps: 0,
     })
-    setIsRecording(false)
     setLearningRate(DEFAULT_LEARNING_RATE)
     setTotalTimesteps(DEFAULT_TOTAL_TIMESTEPS)
     setAlgorithm('PPO')
+    setLatestEvaluationSummary(null)
+    setEvaluationPlaybackUrl(null)
+    setPlaybackError(null)
+    evaluationRequestedAtRef.current = null
     clearCurrentRun()
     clearEvents()
     addLocalEvent('Global reset complete', 'info', 'reset_complete')
@@ -555,6 +723,9 @@ export default function Home() {
         metrics,
         reward_history_last_100: rewardHistory,
         insight: currentInsight,
+        latest_evaluation_summary: latestEvaluationSummary,
+        evaluation_playback_url: evaluationPlaybackUrl,
+        playback_error: playbackError,
         events: events.slice(0, 200),
       }
 
@@ -629,6 +800,7 @@ export default function Home() {
         <CenterPanel
           selectedEnvId={selectedEnvId}
           liveFrame={liveFrame}
+          playbackVideoUrl={evaluationPlaybackUrl}
           isActive={isActive}
           isStreamConnected={isFramesConnected}
           episode={episode}
@@ -636,9 +808,8 @@ export default function Home() {
           metrics={metrics}
           rewardHistory={rewardHistory}
           algorithmInfo={algorithmExplanations[algorithm]}
-          isRecording={isRecording}
-          onToggleRecording={() => setIsRecording(!isRecording)}
           onReset={handleReset}
+          onPlaybackError={handlePlaybackError}
         />
 
         {/* Right Sidebar */}

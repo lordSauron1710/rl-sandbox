@@ -24,6 +24,7 @@ interface CenterPanelProps {
   
   // Live streaming
   liveFrame: LiveFrameState | null
+  playbackVideoUrl?: string | null
   isActive: boolean  // Training or evaluating
   isStreamConnected: boolean
   
@@ -36,15 +37,15 @@ interface CenterPanelProps {
   // Algorithm info
   algorithmInfo?: AlgorithmInfo
   
-  // Recording controls
-  isRecording: boolean
-  onToggleRecording: () => void
+  // Controls
   onReset: () => void
+  onPlaybackError?: () => void
 }
 
 export function CenterPanel({
   selectedEnvId,
   liveFrame,
+  playbackVideoUrl = null,
   isActive,
   isStreamConnected,
   episode,
@@ -52,9 +53,8 @@ export function CenterPanel({
   metrics,
   rewardHistory,
   algorithmInfo,
-  isRecording,
-  onToggleRecording,
   onReset,
+  onPlaybackError,
 }: CenterPanelProps) {
   // Normalize reward history for bar display (0-100%)
   const maxReward = Math.max(...rewardHistory, 1)
@@ -67,13 +67,13 @@ export function CenterPanel({
       <LiveFeed
         selectedEnvId={selectedEnvId}
         liveFrame={liveFrame}
+        playbackVideoUrl={playbackVideoUrl}
         isActive={isActive}
         isConnected={isStreamConnected}
         episode={episode}
         currentReward={currentReward}
-        isRecording={isRecording}
-        onToggleRecording={onToggleRecording}
         onReset={onReset}
+        onPlaybackError={onPlaybackError}
       />
 
       {/* Metrics Row */}

@@ -209,6 +209,22 @@ if [ "$EVENTS_HTTP" = "200" ]; then
 else
   fail "Events endpoint (HTTP $EVENTS_HTTP)"
 fi
+
+info "No evaluation summary before TEST run"
+PRE_EVAL_SUMMARY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$RUN_ID/evaluate/latest")
+if [ "$PRE_EVAL_SUMMARY_HTTP" = "404" ]; then
+  pass "No evaluation summary before evaluation"
+else
+  fail "Expected no pre-eval summary (HTTP $PRE_EVAL_SUMMARY_HTTP)"
+fi
+
+info "No evaluation video before TEST run"
+PRE_EVAL_VIDEO_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$RUN_ID/artifacts/eval/latest.mp4")
+if [ "$PRE_EVAL_VIDEO_HTTP" = "404" ]; then
+  pass "No evaluation video before evaluation"
+else
+  fail "Expected no pre-eval video (HTTP $PRE_EVAL_VIDEO_HTTP)"
+fi
 echo ""
 
 echo "=== 5. EVALUATION FLOW ==="
@@ -236,11 +252,15 @@ if [ "$FINAL_STATUS" = "stopped" ] || [ "$FINAL_STATUS" = "completed" ]; then
   fi
 
   info "Fetch latest evaluation summary"
-  SUMMARY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$RUN_ID/evaluate/latest")
-  if [ "$SUMMARY_HTTP" = "200" ]; then
+  SUMMARY_RESPONSE=$(curl -s --max-time 5 "$API_BASE/runs/$RUN_ID/evaluate/latest")
+  SUMMARY_NUM_EPISODES=$(json_get "$SUMMARY_RESPONSE" '.num_episodes // 0')
+  SUMMARY_MEAN_REWARD=$(json_get "$SUMMARY_RESPONSE" '.mean_reward // empty')
+  SUMMARY_VIDEO_PATH=$(json_get "$SUMMARY_RESPONSE" '.video_path // empty')
+  if [ "$SUMMARY_NUM_EPISODES" -ge 1 ] && [ -n "$SUMMARY_MEAN_REWARD" ] && [ "$SUMMARY_VIDEO_PATH" != "null" ] && [ -n "$SUMMARY_VIDEO_PATH" ]; then
     pass "Evaluation summary endpoint"
   else
-    fail "Evaluation summary endpoint (HTTP $SUMMARY_HTTP)"
+    fail "Evaluation summary endpoint payload"
+    echo "   Response: $SUMMARY_RESPONSE"
   fi
 
   info "Fetch latest evaluation video"
@@ -249,6 +269,17 @@ if [ "$FINAL_STATUS" = "stopped" ] || [ "$FINAL_STATUS" = "completed" ]; then
     pass "Latest evaluation video endpoint"
   else
     fail "Latest evaluation video endpoint (HTTP $VIDEO_HTTP)"
+  fi
+
+  info "Verify evaluation lifecycle events"
+  EVAL_EVENTS=$(curl -s --max-time 5 "$API_BASE/runs/$RUN_ID/events?limit=100")
+  HAS_EVAL_STARTED=$(echo "$EVAL_EVENTS" | jq -r '[.events[]? | select(.event_type=="evaluation_started")] | length')
+  HAS_EVAL_COMPLETED=$(echo "$EVAL_EVENTS" | jq -r '[.events[]? | select(.event_type=="evaluation_completed")] | length')
+  if [ "$HAS_EVAL_STARTED" -ge 1 ] && [ "$HAS_EVAL_COMPLETED" -ge 1 ]; then
+    pass "Evaluation started/completed events recorded"
+  else
+    fail "Evaluation events missing"
+    echo "   Started events: $HAS_EVAL_STARTED  Completed events: $HAS_EVAL_COMPLETED"
   fi
 else
   fail "Skipping evaluation flow because run ended as $FINAL_STATUS"
