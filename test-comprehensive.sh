@@ -152,6 +152,14 @@ else
   fail "Metrics stream did not emit SSE data"
 fi
 
+info "Check events SSE endpoint"
+EVENTS_SSE_RESULT=$(curl -sN --max-time 3 "$API_BASE/runs/$RUN_ID/stream/events" || true)
+if echo "$EVENTS_SSE_RESULT" | grep -q "event: event"; then
+  pass "Events stream emits event log data"
+else
+  fail "Events stream did not emit event log data"
+fi
+
 info "Stop training"
 STOP_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$RUN_ID/stop")
 STOP_STATUS=$(json_get "$STOP_RESPONSE" '.status // empty')

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Header,
   LeftSidebar,
@@ -9,9 +9,14 @@ import {
   type Metrics,
   type AlgorithmInfo,
   type AnalysisInsight,
-  type EventLogEntry,
 } from '@/components'
-import { useEnvironments, useTraining, useMetricsStream, useLiveFrames } from '@/hooks'
+import {
+  useEnvironments,
+  useTraining,
+  useMetricsStream,
+  useLiveFrames,
+  useEventLog,
+} from '@/hooks'
 import { ApiRun } from '@/services/api'
 
 // Algorithm explanations
@@ -90,20 +95,22 @@ function buildAnalysisInsight({
   if (!run) return null
 
   const mode = run.status === 'evaluating' ? 'EVALUATION' : 'TRAINING'
-  const progressPercent = run.status === 'evaluating' ? testingProgressPercent : trainingProgressPercent
+  const progressPercent =
+    run.status === 'evaluating' ? testingProgressPercent : trainingProgressPercent
   const progressText = `${Math.round(progressPercent)}%`
 
-  if (rewardHistory.length < 3) {
+  if (rewardHistory.length < 5) {
     return {
-      title: `${mode} INITIALIZING`,
+      title: `${mode} EXPLORATION PHASE`,
       paragraphs: [
-        `${algorithm} on ${envLabel} is active (${actionSpaceType} action space). Progress is ${progressText} while early episodes are still collecting signal.`,
-        `Current telemetry: mean reward ${meanReward.toFixed(1)}, episode length ${episodeLength}, stream FPS ${fps}.`,
+        `${algorithm} on ${envLabel} is collecting early episodes (${actionSpaceType} action space). Progress is ${progressText} while policy behavior is still exploratory.`,
+        `Telemetry snapshot: mean reward ${meanReward.toFixed(1)}, episode length ${episodeLength}, stream FPS ${fps}.`,
+        'Recommendation: keep running until at least 10 episodes before making hyperparameter changes.',
       ],
     }
   }
 
-  const windowSize = Math.min(10, rewardHistory.length)
+  const windowSize = Math.min(12, rewardHistory.length)
   const recentWindow = rewardHistory.slice(-windowSize)
   const previousWindow = rewardHistory.slice(-windowSize * 2, -windowSize)
 
@@ -111,29 +118,75 @@ function buildAnalysisInsight({
   const previousMean = previousWindow.length > 0 ? mean(previousWindow) : recentMean
   const delta = recentMean - previousMean
   const volatility = stdDev(recentWindow)
+  const convergenceThreshold = Math.max(0.75, Math.abs(recentMean) * 0.05)
+  const stableVolatilityThreshold = Math.max(2, Math.abs(recentMean) * 0.1)
+  const highVarianceThreshold = Math.max(6, Math.abs(recentMean) * 0.28)
 
-  const trendLabel =
-    delta > 1 ? 'improving' : delta < -1 ? 'regressing' : 'flat'
-  const trendMagnitude = Math.abs(delta).toFixed(1)
+  const isConverging =
+    run.status !== 'evaluating' &&
+    progressPercent >= 40 &&
+    Math.abs(delta) <= convergenceThreshold &&
+    volatility <= stableVolatilityThreshold
 
-  const genericTip =
-    algorithm === 'DQN'
-      ? 'If trend stays flat, increase timesteps or lower learning rate so replay updates stabilize.'
-      : actionSpaceType === 'Continuous'
-      ? 'Continuous-control runs are noisy early; prioritize trend over single-episode spikes.'
-      : 'If volatility remains high, extend timesteps or reduce learning rate for smoother policy updates.'
+  const isHighVariance = volatility >= highVarianceThreshold
+  const isPlateaued = run.status !== 'evaluating' && progressPercent >= 30 && delta <= 0
 
-  const modeParagraph =
-    run.status === 'evaluating'
-      ? `Evaluation progress is ${progressText} (${Math.max(0, currentEvalEpisode)}/${Math.max(1, totalEvalEpisodes)} episodes).`
-      : `Training progress is ${progressText} (${run.progress?.current_timestep ?? 0}/${run.progress?.total_timesteps ?? 0} timesteps).`
+  if (run.status === 'evaluating') {
+    return {
+      title: 'GENERALIZATION CHECK',
+      paragraphs: [
+        `Evaluation is ${progressText} complete (${Math.max(0, currentEvalEpisode)}/${Math.max(1, totalEvalEpisodes)} episodes). Recent return mean is ${recentMean.toFixed(1)}.`,
+        `Observed variance is ${volatility.toFixed(1)} across the latest ${windowSize} episodes, indicating ${isHighVariance ? 'unstable' : 'consistent'} policy behavior.`,
+        isHighVariance
+          ? 'Recommendation: increase training timesteps and reduce learning rate before the next evaluation pass.'
+          : 'Recommendation: policy appears portable; run a longer evaluation set to confirm stability.',
+      ],
+    }
+  }
+
+  if (isConverging) {
+    return {
+      title: 'CONVERGENCE DETECTED',
+      paragraphs: [
+        `Recent reward mean (${recentMean.toFixed(1)}) is flat against the prior window (delta ${delta.toFixed(1)}), and volatility has reduced to ${volatility.toFixed(1)}.`,
+        `Episode length is ${episodeLength} with stream FPS at ${fps}. This is a stable behavior signature for ${algorithm}.`,
+        'Recommendation: keep current hyperparameters and extend total timesteps to solidify policy consistency.',
+      ],
+    }
+  }
+
+  if (isHighVariance) {
+    return {
+      title: 'HIGH VARIANCE POLICY',
+      paragraphs: [
+        `Reward swing is elevated (${volatility.toFixed(1)} std over ${windowSize} episodes) with mean ${recentMean.toFixed(1)} and trend delta ${delta.toFixed(1)}.`,
+        `Behavior suggests unstable exploration/exploitation balance for ${algorithm} on ${envLabel}.`,
+        actionSpaceType === 'Continuous'
+          ? 'Recommendation: lower learning rate and increase rollout horizon; continuous control benefits from smoother policy updates.'
+          : 'Recommendation: lower learning rate or increase replay/batch coverage to reduce oscillation.',
+      ],
+    }
+  }
+
+  if (isPlateaued) {
+    return {
+      title: 'PLATEAU PATTERN',
+      paragraphs: [
+        `Recent mean (${recentMean.toFixed(1)}) is not improving versus prior episodes (delta ${delta.toFixed(1)}).`,
+        `Training progress is ${progressText} (${run.progress?.current_timestep ?? 0}/${run.progress?.total_timesteps ?? 0} timesteps).`,
+        algorithm === 'DQN'
+          ? 'Recommendation: extend timesteps and reduce learning rate; if still stuck, tune exploration_fraction for better coverage.'
+          : 'Recommendation: consider reward shaping or adjusting batch/n_steps to escape the local optimum.',
+      ],
+    }
+  }
 
   return {
-    title: `${mode} SIGNAL`,
+    title: 'LEARNING TREND DETECTED',
     paragraphs: [
-      `${algorithm} on ${envLabel}: recent reward mean ${recentMean.toFixed(1)} (${trendLabel}, ${trendMagnitude} vs previous ${windowSize}-episode window).`,
-      `Reward volatility over the latest window is ${volatility.toFixed(1)}; current episode length is ${episodeLength} and live stream FPS is ${fps}.`,
-      `${modeParagraph} ${genericTip}`,
+      `Recent reward mean is ${recentMean.toFixed(1)} with delta ${delta.toFixed(1)} over the prior ${windowSize}-episode window.`,
+      `Volatility is ${volatility.toFixed(1)} and episode length is ${episodeLength}; live FPS is ${fps}.`,
+      'Recommendation: continue current run and reassess after another 10-20 episodes for clearer policy direction.',
     ],
   }
 }
@@ -177,6 +230,17 @@ export default function Home() {
     clearError: clearFramesError,
   } = useLiveFrames()
 
+  // Event log streaming (backend SSE + local UI events)
+  const {
+    events,
+    isConnected: isEventsConnected,
+    error: eventsError,
+    connect: connectEvents,
+    disconnect: disconnectEvents,
+    clear: clearEvents,
+    addLocalEvent,
+  } = useEventLog()
+
   // Environment state - select first environment when loaded
   const [selectedEnvId, setSelectedEnvId] = useState<string | null>(null)
   
@@ -202,9 +266,6 @@ export default function Home() {
     loss: 0,
     fps: 0,
   })
-
-  // Event log state
-  const [events, setEvents] = useState<EventLogEntry[]>([])
 
   const selectedEnvironment = useMemo(
     () => environments.find((environment) => environment.id === selectedEnvId) ?? null,
@@ -281,12 +342,22 @@ export default function Home() {
     clearFramesError,
   ])
 
+  // Keep event stream connected for the active run lifecycle.
+  useEffect(() => {
+    if (!currentRun?.id) {
+      disconnectEvents()
+      return
+    }
+    connectEvents(currentRun.id)
+  }, [currentRun?.id, connectEvents, disconnectEvents])
+
   useEffect(() => {
     return () => {
       disconnectMetrics()
       disconnectFrames()
+      disconnectEvents()
     }
-  }, [disconnectMetrics, disconnectFrames])
+  }, [disconnectMetrics, disconnectFrames, disconnectEvents])
 
   // Computed values from stream or local state
   const episode = streamedMetrics?.episode ?? 0
@@ -323,34 +394,6 @@ export default function Home() {
     ]
   )
 
-  // Add event to log (stored with timestamp for chronological sort)
-  const addEvent = useCallback((message: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
-    const now = new Date()
-    const timestamp = now.getTime()
-    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
-    setEvents(prev => [
-      { id: `${timestamp}-${Math.random().toString(36).slice(2, 9)}`, time, timestamp, message, type },
-      ...prev.slice(0, 49), // Keep last 50 events
-    ])
-  }, [])
-
-  const previousRunStatusRef = useRef<string | null>(null)
-  useEffect(() => {
-    const nextStatus = currentRun?.status ?? null
-    const previousStatus = previousRunStatusRef.current
-    if (!nextStatus || nextStatus === previousStatus) {
-      previousRunStatusRef.current = nextStatus
-      return
-    }
-
-    if (nextStatus === 'completed') addEvent('Training completed', 'success')
-    if (nextStatus === 'failed') addEvent('Run failed', 'error')
-    if (nextStatus === 'stopped' && previousStatus === 'training') addEvent('Training stopped', 'success')
-    if (nextStatus === 'evaluating' && previousStatus !== 'evaluating') addEvent('Evaluation started', 'success')
-    if (previousStatus === 'evaluating' && nextStatus !== 'evaluating') addEvent('Evaluation finished', 'success')
-    previousRunStatusRef.current = nextStatus
-  }, [currentRun?.status, addEvent])
-
   // Handlers
   const handleTrain = async () => {
     if (!selectedEnvId) return
@@ -358,7 +401,7 @@ export default function Home() {
     
     clearError()
     clearFramesError()
-    addEvent(`Starting training [${algorithm}]...`, 'info')
+    addLocalEvent(`Starting training [${algorithm}]...`, 'info', 'training_requested')
     
     try {
       const parsedLearningRate = Number.parseFloat(learningRate)
@@ -380,6 +423,7 @@ export default function Home() {
         },
         {
           onRunCreated: async (run) => {
+            connectEvents(run.id)
             connectMetrics(run.id)
             try {
               await Promise.race([
@@ -395,27 +439,28 @@ export default function Home() {
           },
         }
       )
-      
-      addEvent(`Training started on ${selectedEnvId}`, 'success')
-      addEvent('Environment initialized', 'success')
-      
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start training'
-      addEvent(`Error: ${message}`, 'error')
+      addLocalEvent(`Error: ${message}`, 'error', 'error')
     }
   }
 
   const handleTest = async () => {
     if (!currentRun) {
-      addEvent('No trained model available for testing', 'warning')
+      addLocalEvent('No trained model available for testing', 'warning', 'warning')
       return
     }
     
     clearError()
-    addEvent(`Starting evaluation: ${DEFAULT_EVAL_EPISODES} episodes...`, 'info')
+    addLocalEvent(
+      `Starting evaluation: ${DEFAULT_EVAL_EPISODES} episodes...`,
+      'info',
+      'evaluation_requested'
+    )
     
     try {
       // Connect frames before evaluation so the live feed shows the environment during test
+      connectEvents(currentRun.id)
       connectMetrics(currentRun.id)
       try {
         await Promise.race([
@@ -430,7 +475,7 @@ export default function Home() {
       await evaluate(DEFAULT_EVAL_EPISODES)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start evaluation'
-      addEvent(`Error: ${message}`, 'error')
+      addLocalEvent(`Error: ${message}`, 'error', 'error')
     }
   }
 
@@ -439,14 +484,18 @@ export default function Home() {
     
     const mode = currentRun.status === 'evaluating' ? 'evaluation' : 'training'
     clearError()
-    addEvent(`Stopping ${mode}...`, 'info')
+    addLocalEvent(`Stopping ${mode}...`, 'info', `${mode}_stop_requested`)
     
     try {
       await stop()
-      addEvent(`${mode[0].toUpperCase()}${mode.slice(1)} stop requested`, 'info')
+      addLocalEvent(
+        `${mode[0].toUpperCase()}${mode.slice(1)} stop requested`,
+        'info',
+        `${mode}_stop_requested`
+      )
     } catch (err) {
       const message = err instanceof Error ? err.message : `Failed to stop ${mode}`
-      addEvent(`Error: ${message}`, 'error')
+      addLocalEvent(`Error: ${message}`, 'error', 'error')
     }
   }
 
@@ -455,7 +504,7 @@ export default function Home() {
     clearFramesError()
 
     if (currentRun && (currentRun.status === 'training' || currentRun.status === 'evaluating')) {
-      addEvent('Global reset requested: stopping active run...', 'info')
+      addLocalEvent('Global reset requested: stopping active run...', 'info', 'reset_requested')
       try {
         await Promise.race([
           stop(),
@@ -481,14 +530,50 @@ export default function Home() {
     setTotalTimesteps(DEFAULT_TOTAL_TIMESTEPS)
     setAlgorithm('PPO')
     clearCurrentRun()
-    setEvents([])
-    addEvent('Global reset complete', 'info')
+    clearEvents()
+    addLocalEvent('Global reset complete', 'info', 'reset_complete')
   }
 
   const handleGenerateReport = () => {
-    addEvent('Generating report...', 'info')
-    // TODO: Generate and download report
-    console.log('Generating report...')
+    addLocalEvent('Generating report...', 'info', 'report_requested')
+
+    try {
+      const generatedAt = new Date()
+      const timestampTag = generatedAt.toISOString().replace(/[:.]/g, '-')
+      const runSegment = currentRun?.id.slice(0, 8) ?? 'session'
+      const fileName = `rl-report-${runSegment}-${timestampTag}.json`
+
+      const report = {
+        generated_at: generatedAt.toISOString(),
+        run: currentRun,
+        selected_environment: selectedEnvironment,
+        algorithm,
+        hyperparameters: {
+          learning_rate: learningRate,
+          total_timesteps: totalTimesteps,
+        },
+        metrics,
+        reward_history_last_100: rewardHistory,
+        insight: currentInsight,
+        events: events.slice(0, 200),
+      }
+
+      const blob = new Blob([JSON.stringify(report, null, 2)], {
+        type: 'application/json',
+      })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = fileName
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+
+      addLocalEvent(`Report generated (${fileName})`, 'success', 'report_generated')
+    } catch {
+      addLocalEvent('Failed to generate report', 'error', 'error')
+    }
   }
 
   return (
@@ -561,6 +646,8 @@ export default function Home() {
           insight={currentInsight || undefined}
           events={events}
           onGenerateReport={handleGenerateReport}
+          isEventsConnected={isEventsConnected}
+          eventsError={eventsError?.message ?? null}
         />
       </main>
     </>

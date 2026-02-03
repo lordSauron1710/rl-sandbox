@@ -1,30 +1,24 @@
 'use client'
 
-export interface AnalysisInsight {
-  title: string
-  paragraphs: string[]
-}
-
-export interface EventLogEntry {
-  id: string
-  time: string
-  timestamp?: number
-  message: string
-  type: 'info' | 'warning' | 'error' | 'success'
-}
+import { AnalysisPanel, AnalysisInsight } from './AnalysisPanel'
+import { EventLog, EventLogEntry } from './EventLog'
 
 interface RightSidebarProps {
   insight?: AnalysisInsight
   events: EventLogEntry[]
   onGenerateReport: () => void
+  isEventsConnected?: boolean
+  eventsError?: string | null
 }
 
 export function RightSidebar(props: RightSidebarProps) {
-  const { insight, events, onGenerateReport } = props
-
-  const sortedEvents = [...events].sort(
-    (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)
-  )
+  const {
+    insight,
+    events,
+    onGenerateReport,
+    isEventsConnected = false,
+    eventsError = null,
+  } = props
 
   return (
     <div className="panel-card col col-right w-[320px] flex-shrink-0">
@@ -32,67 +26,31 @@ export function RightSidebar(props: RightSidebarProps) {
         <span className="label m-0">ANALYSIS & EXPLAINER</span>
       </div>
 
-      <div className="p-4 border-b border-border">
-        {insight ? (
-          <>
-            <div className="label text-black mb-2">{insight.title}</div>
-            {insight.paragraphs.map((paragraph, index) => (
-              <p
-                key={index}
-                className="font-sans text-[13px] text-text-secondary mb-4 leading-relaxed"
-              >
-                {paragraph}
-              </p>
-            ))}
-          </>
-        ) : (
-          <p className="font-sans text-[13px] text-text-secondary leading-relaxed">
-            Start training to see policy analysis and insights.
-          </p>
-        )}
-        <button
-          className="btn btn-secondary text-[10px] w-auto"
-          onClick={onGenerateReport}
-        >
-          Generate Report
-        </button>
-      </div>
+      <AnalysisPanel insight={insight} onGenerateReport={onGenerateReport} />
 
       <div className="panel-header border-t border-border">
-        <span className="label m-0">EVENT LOG</span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="label m-0">EVENT LOG</span>
+          {eventsError ? (
+            <span className="text-[9px] uppercase tracking-wider text-accent-danger">
+              stream unavailable
+            </span>
+          ) : (
+            <span
+              className={`text-[9px] uppercase tracking-wider ${
+                isEventsConnected ? 'text-accent-success' : 'text-text-secondary'
+              }`}
+            >
+              {isEventsConnected ? 'live' : 'idle'}
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="px-4 flex-1 overflow-y-auto scrollbar-thin">
-        {sortedEvents.length === 0 ? (
-          <p className="font-mono text-[11px] text-text-secondary py-2">
-            No events yet.
-          </p>
-        ) : (
-          sortedEvents.map((event) => (
-            <div
-              key={event.id}
-              className="font-mono text-[11px] py-2 border-b border-border flex gap-2"
-            >
-              <span className="text-text-secondary w-[50px] flex-shrink-0">
-                {event.time}
-              </span>
-              <span
-                className={
-                  event.type === 'warning'
-                    ? 'text-accent-danger'
-                    : event.type === 'error'
-                    ? 'text-accent-danger font-semibold'
-                    : event.type === 'success'
-                    ? 'text-accent-success'
-                    : ''
-                }
-              >
-                {event.message}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
+      <EventLog events={events} />
     </div>
   )
 }
+
+export type { AnalysisInsight } from './AnalysisPanel'
+export type { EventLogEntry } from './EventLog'

@@ -9,6 +9,7 @@ from datetime import datetime
 
 class EventType(str, Enum):
     """Type of event in the event log."""
+    ENVIRONMENT_INITIALIZED = "environment_initialized"
     TRAINING_STARTED = "training_started"
     TRAINING_STOPPED = "training_stopped"
     TRAINING_COMPLETED = "training_completed"

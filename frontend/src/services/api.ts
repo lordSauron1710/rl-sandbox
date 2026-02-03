@@ -78,6 +78,14 @@ export interface EvaluationProgress {
   started_at: string
 }
 
+export interface ApiEvent {
+  id: number
+  timestamp: string
+  event_type: string
+  message: string
+  metadata?: Record<string, unknown> | null
+}
+
 /**
  * Fetch all environments from the backend
  */
@@ -231,6 +239,34 @@ export async function listRuns(params?: {
   if (!response.ok) {
     throw new Error(
       await getErrorMessage(response, `Failed to list runs: ${response.statusText}`)
+    )
+  }
+  return response.json()
+}
+
+/**
+ * List events for a run
+ */
+export async function listRunEvents(
+  runId: string,
+  params?: {
+    eventType?: string
+    limit?: number
+    offset?: number
+  }
+): Promise<{ events: ApiEvent[]; total: number }> {
+  const searchParams = new URLSearchParams()
+  if (params?.eventType) searchParams.set('event_type', params.eventType)
+  if (params?.limit) searchParams.set('limit', params.limit.toString())
+  if (params?.offset) searchParams.set('offset', params.offset.toString())
+
+  const url = `${API_BASE_URL}/runs/${runId}/events${
+    searchParams.toString() ? `?${searchParams}` : ''
+  }`
+  const response = await fetch(url, { cache: 'no-store' })
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(response, `Failed to list events: ${response.statusText}`)
     )
   }
   return response.json()

@@ -14,6 +14,8 @@ import gymnasium as gym
 from stable_baselines3 import PPO, DQN
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
 
+from app.db import events_repository
+from app.models.event import EventType
 from app.models.environment import get_environment
 from app.storage.run_storage import RunStorage
 from app.training.callback import MetricsCallback
@@ -166,6 +168,16 @@ class TrainingRunner:
 
             # Create environment
             self.env = self._create_env()
+            try:
+                events_repository.create_event(
+                    run_id=self.run_id,
+                    event_type=EventType.ENVIRONMENT_INITIALIZED,
+                    message=f"Environment initialized: {self.env_id}",
+                    metadata={"render_mode": "rgb_array"},
+                )
+            except Exception:
+                # Environment creation should not fail if event logging fails.
+                pass
 
             # Create model
             self.model = self._create_model(self.env)

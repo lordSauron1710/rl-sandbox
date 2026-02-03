@@ -3,6 +3,8 @@ export { Header } from './Header'
 export { LeftSidebar } from './LeftSidebar'
 export { CenterPanel } from './CenterPanel'
 export { RightSidebar } from './RightSidebar'
+export { AnalysisPanel } from './AnalysisPanel'
+export { EventLog } from './EventLog'
 
 // UI components
 export { LoadingButton, LoadingSpinner, LoadingRing } from './LoadingButton'
