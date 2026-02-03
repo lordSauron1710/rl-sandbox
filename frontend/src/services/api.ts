@@ -78,6 +78,19 @@ export interface EvaluationProgress {
   started_at: string
 }
 
+export interface EvaluationSummary {
+  num_episodes: number
+  mean_reward: number
+  std_reward: number
+  min_reward: number
+  max_reward: number
+  mean_length: number
+  std_length: number
+  termination_rate: number
+  video_path: string | null
+  timestamp: string
+}
+
 export interface ApiEvent {
   id: number
   timestamp: string
@@ -205,6 +218,24 @@ export async function getEvaluationProgress(runId: string): Promise<EvaluationPr
 }
 
 /**
+ * Get latest evaluation summary for a run
+ */
+export async function getLatestEvaluation(runId: string): Promise<EvaluationSummary> {
+  const response = await fetch(`${API_BASE_URL}/runs/${runId}/evaluate/latest`, {
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        `Failed to fetch evaluation summary: ${response.statusText}`
+      )
+    )
+  }
+  return response.json()
+}
+
+/**
  * Get run details
  */
 export async function getRun(runId: string): Promise<ApiRun> {
@@ -278,6 +309,28 @@ export async function listRunEvents(
  */
 export function getEnvironmentPreviewUrl(envId: string): string {
   return `${API_BASE_URL}/environments/${encodeURIComponent(envId)}/preview`
+}
+
+/**
+ * Build an absolute URL from an API path (e.g. /api/v1/...)
+ */
+export function toAbsoluteApiUrl(pathOrUrl: string): string {
+  if (/^https?:\/\//i.test(pathOrUrl)) {
+    return pathOrUrl
+  }
+
+  const apiRoot = API_BASE_URL.replace(/\/api\/v1\/?$/, '')
+  if (pathOrUrl.startsWith('/')) {
+    return `${apiRoot}${pathOrUrl}`
+  }
+  return `${apiRoot}/${pathOrUrl}`
+}
+
+/**
+ * Get the latest evaluation MP4 URL for playback.
+ */
+export function getLatestEvaluationVideoUrl(runId: string): string {
+  return `${API_BASE_URL}/runs/${runId}/artifacts/eval/latest.mp4`
 }
 
 /**

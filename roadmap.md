@@ -359,7 +359,7 @@ Implement the right sidebar with AI analysis and event logging.
 ---
 
 ### Prompt 13 — Evaluation playback integration
-// NOT STARTED
+// EXECUTED
 
 Integrate evaluation playback into the Live Feed panel.
 
@@ -381,7 +381,7 @@ Integrate evaluation playback into the Live Feed panel.
 ---
 
 ### Prompt 14 — Analysis insights engine (v0)
-// NOT STARTED
+// EXECUTED
 
 Implement basic analysis insights for the Analysis & Explainer panel.
 
