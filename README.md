@@ -1,110 +1,56 @@
-# RL/Gym Visualizer
+# RL Sandbox (RL Gym Visualizer)
 
-A lightweight web application for visualizing reinforcement learning training and evaluation.
-
-**Current UI sample**
+Lightweight RL training + evaluation visualizer built with FastAPI (backend) and Next.js (frontend).
 
 ![Frontend Screenshot](docs/assets/frontend-screenshot.png)
 
-## Features
+## What this project does
 
-- **3 Environments:** LunarLander-v3, CartPole-v1, BipedalWalker-v3
-- **Algorithms:** PPO (all envs) and DQN (discrete action spaces only)
-- **Real-time training:** Live metrics streaming via SSE, frame streaming via WebSocket
-- **Evaluation:** Record and playback evaluation videos (MP4)
-- **Modern UI:** Responsive 3-column dashboard with environment selection, hyperparameters, and live visualization
+- Trains RL agents with PPO and DQN (SB3).
+- Streams live metrics over SSE and live environment frames over WebSocket.
+- Records evaluation runs and serves MP4 artifacts.
+- Provides a responsive 3-column dashboard for environment setup, live feed, and logs.
 
-## Project Structure
+## Architecture
 
 ```
+Frontend (Next.js)  <---- REST / SSE / WS ---->  Backend (FastAPI + Gymnasium + SB3)
+        Vercel-ish                                Fly.io-ish / long-running process
+```
+
+## Supported environments
+
+| Environment | Action Space | Observation Space | Algorithms |
+|---|---|---|---|
+| `LunarLander-v3` | Discrete (4) | Box(8) | PPO, DQN |
+| `CartPole-v1` | Discrete (2) | Box(4) | PPO, DQN |
+| `BipedalWalker-v3` | Continuous (4) | Box(24) | PPO |
+
+## Repository layout
+
+```text
 rl-sandbox/
-├── backend/                        # FastAPI backend
+├── backend/
 │   ├── app/
-│   │   ├── db/                     # Database layer
-│   │   │   ├── database.py         # SQLite connection
-│   │   │   ├── schema.sql          # DB schema
-│   │   │   ├── runs_repository.py
-│   │   │   └── events_repository.py
-│   │   ├── models/                 # Pydantic models
-│   │   │   ├── environment.py      # Environment registry
-│   │   │   ├── event.py
-│   │   │   └── run.py
-│   │   ├── routers/                # API endpoints
-│   │   │   ├── environments.py
-│   │   │   └── runs.py
-│   │   ├── storage/                # File storage
-│   │   │   └── run_storage.py
-│   │   ├── streaming/              # SSE & WebSocket
-│   │   │   ├── pubsub.py
-│   │   │   └── router.py
-│   │   ├── training/               # Training runner
-│   │   │   ├── callback.py
-│   │   │   ├── evaluator.py
-│   │   │   ├── manager.py
-│   │   │   └── runner.py
+│   │   ├── db/            # SQLite schema + repositories
+│   │   ├── models/        # Pydantic/domain models
+│   │   ├── routers/       # REST endpoints
+│   │   ├── streaming/     # SSE / WebSocket infrastructure
+│   │   ├── storage/       # Run artifact storage
+│   │   ├── training/      # Training/evaluation runners
 │   │   └── main.py
-│   ├── data/                       # SQLite database (created on startup)
-│   ├── runs/                       # Run artifacts (created per run)
 │   └── requirements.txt
-├── frontend/                       # Next.js frontend
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx
-│   │   │   ├── page.tsx            # Main dashboard page
-│   │   │   └── globals.css         # Global styles + design tokens
-│   │   ├── components/
-│   │   │   ├── Header.tsx          # App header with branding
-│   │   │   ├── LeftSidebar.tsx     # Env select + hyperparameters + TRAIN/STOP/TEST
-│   │   │   ├── CenterPanel.tsx     # Live feed + metrics + reward chart
-│   │   │   ├── LiveFeed.tsx        # Live stream / env preview (idle)
-│   │   │   ├── RightSidebar.tsx    # Analysis + event log
-│   │   │   ├── EnvironmentCard.tsx # Selectable environment card
-│   │   │   ├── HyperparametersForm.tsx # Training config form
-│   │   │   ├── LoadingButton.tsx   # Button with spinner
-│   │   │   └── index.ts            # Component exports
-│   │   ├── hooks/
-│   │   │   ├── useEnvironments.ts  # Fetch environments from API
-│   │   │   ├── useTraining.ts      # Training state management
-│   │   │   ├── useMetricsStream.ts # SSE metrics stream
-│   │   │   ├── useLiveFrames.ts    # WebSocket frame stream
-│   │   │   └── index.ts
-│   │   └── services/
-│   │       └── api.ts              # Type-safe API client
-│   ├── package.json
-│   └── tailwind.config.ts
-├── docs/                           # Documentation
-│   ├── api-contract.md             # Full API specification
-│   ├── data-model.md               # Data model docs
-│   ├── prompt-11-analysis-and-tests.md  # Prompt 11 analysis & test guide
-│   ├── testing-guide-prompt-11.md  # Button/control behavior (Prompt 11)
-│   └── assets/
-│       ├── frontend-design-reference.png
-│       └── frontend-screenshot.png
-├── Makefile                        # Dev scripts (backend, frontend, test-smoke, test)
-├── test-smoke.sh                   # Minimal backend smoke test for CI
-├── test-comprehensive.sh            # Full backend test (envs, lifecycle, eval)
-├── roadmap.md                      # Development prompts
-└── README.md
+├── frontend/
+│   ├── src/app/           # Next app shell/page
+│   ├── src/components/    # Dashboard UI
+│   ├── src/hooks/         # Runtime hooks (training/streaming)
+│   └── src/services/      # API client
+├── docs/                  # Contracts, data model, test notes
+├── roadmap.md             # Prompt roadmap
+├── errors.md              # Known issues + latest working fixes
+├── test-smoke.sh
+└── test-comprehensive.sh
 ```
-
-## Supported Environments
-
-| Environment | Action Space | Obs Space | Algorithms |
-|-------------|--------------|-----------|------------|
-| LunarLander-v3 | Discrete (4) | Box(8) | PPO, DQN |
-| CartPole-v1 | Discrete (2) | Box(4) | PPO, DQN |
-| BipedalWalker-v3 | Continuous (4) | Box(24) | PPO only |
-
-(Environments use v3 where Gymnasium 1.0+ deprecated v2.)
-
-## UI Design
-
-The frontend uses a **responsive 3-column dashboard layout**:
-- **Left sidebar:** Environment selection cards + Hyperparameters form (algorithm, learning rate, timesteps)
-- **Center panel:** Live feed visualization + Metrics (Mean Reward, Episode Length, Loss, FPS) + Reward history chart
-- **Right sidebar:** Analysis & Explainer + Event log
-
-On mobile, sidebars stack vertically for responsive viewing.
 
 ## Prerequisites
 
@@ -112,88 +58,82 @@ On mobile, sidebars stack vertically for responsive viewing.
 - Node.js 18+
 - npm
 
-## Quick Start
+## Quick start
 
-### 1. Install Dependencies
+### 1) Install dependencies
 
 ```bash
-# Install all dependencies
 make install
 ```
 
-Or install separately:
+### 2) Run the app
 
 ```bash
-# Backend
-cd backend
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-# Frontend
-cd frontend
-npm install
-```
-
-### 2. Start Development Servers
-
-```bash
-# Start both servers
 make dev
 ```
 
-Or start separately:
+Services:
+
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8000`
+- Backend docs: `http://localhost:8000/docs`
+
+## Run tests
+
+Backend must be running first.
 
 ```bash
-# Terminal 1 - Backend
-make backend
-# Or: cd backend && source .venv/bin/activate && uvicorn app.main:app --reload
-
-# Terminal 2 - Frontend
-make frontend
-# Or: cd frontend && npm run dev
-```
-
-### 3. Access the Application
-
-- **Frontend:** http://localhost:3000
-- **Backend API:** http://localhost:8000
-- **API Docs:** http://localhost:8000/docs
-
-### 4. Run Tests (backend must be running)
-
-```bash
-# Minimal smoke test (CI-friendly: health, envs, create/start/stop run)
 make test-smoke
-
-# Full test (environments, lifecycle, evaluation, error handling)
 make test
 ```
 
-## API Endpoints
+Manual invocation with explicit host (useful on some systems):
 
-Base URL: `http://localhost:8000/api/v1`
+```bash
+API_BASE=http://127.0.0.1:8000/api/v1 HEALTH_URL=http://127.0.0.1:8000/health bash test-smoke.sh
+API_BASE=http://127.0.0.1:8000/api/v1 HEALTH_URL=http://127.0.0.1:8000/health bash test-comprehensive.sh
+```
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check (at origin, not under `/api/v1`) |
-| `/environments` | GET | List supported environments |
-| `/environments/{id}/preview` | GET | Single JPEG preview frame (idle state) |
-| `/runs` | GET | List all runs |
-| `/runs` | POST | Create a new run |
-| `/runs/{id}` | GET | Get run details |
+## Key API routes
+
+Base API: `http://localhost:8000/api/v1`
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/environments` | GET | List available environments |
+| `/environments/{id}/preview` | GET | Get idle preview frame (JPEG) |
+| `/runs` | POST | Create run |
 | `/runs/{id}/start` | POST | Start training |
 | `/runs/{id}/stop` | POST | Stop training |
-| `/runs/{id}/evaluate` | POST | Start evaluation (num_episodes, stream_frames, target_fps) |
-| `/runs/{id}/events` | GET | List run events |
-| `/runs/{id}/stream/metrics` | GET | SSE metrics stream |
-| `/runs/{id}/ws/frames` | WS | WebSocket frame stream |
+| `/runs/{id}/evaluate` | POST | Start evaluation |
+| `/runs/{id}/stream/metrics` | GET (SSE) | Live metrics stream |
+| `/runs/{id}/ws/frames` | WS | Live frame stream |
+| `/runs/{id}/artifacts/*` | GET | Config/metrics/eval artifacts |
 
-See [docs/api-contract.md](./docs/api-contract.md) for full API documentation. See [docs/testing-guide-prompt-11.md](./docs/testing-guide-prompt-11.md) for button/control behavior and [docs/prompt-11-analysis-and-tests.md](./docs/prompt-11-analysis-and-tests.md) for Prompt 11 analysis and test instructions.
+For full schemas and examples, see `docs/api-contract.md`.
 
-## Development
+## Environment variables
 
-See [docs/README.md](./docs/README.md) for detailed documentation.
+### Backend
+
+- `CORS_ORIGINS`: comma-separated allowed origins (default local origins).
+- `RLV_RUNS_DIR`: custom path for run artifacts (default `backend/runs`).
+
+### Frontend
+
+- `NEXT_PUBLIC_API_URL`: backend API base (default `http://localhost:8000/api/v1`).
+
+## Documentation map
+
+- `docs/api-contract.md` — API contract.
+- `docs/data-model.md` — storage and schema model.
+- `docs/testing-guide-prompt-11.md` — runtime behavior and UI testing notes.
+- `docs/prompt-11-analysis-and-tests.md` — prompt-11 implementation review.
+- `errors.md` — root causes and latest working fixes (read before flow changes).
+
+## Roadmap status
+
+Prompts 01–11 in `roadmap.md` are executed. Prompts 12+ are planned follow-up work.
 
 ## License
 
