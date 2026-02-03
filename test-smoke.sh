@@ -13,8 +13,8 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-pass() { echo -e "${GREEN}✓${NC} $1"; ((PASSED++)); }
-fail() { echo -e "${RED}✗${NC} $1"; ((FAILED++)); }
+pass() { echo -e "${GREEN}✓${NC} $1"; PASSED=$((PASSED + 1)); }
+fail() { echo -e "${RED}✗${NC} $1"; FAILED=$((FAILED + 1)); }
 
 echo "=== Backend smoke test (CI) ==="
 

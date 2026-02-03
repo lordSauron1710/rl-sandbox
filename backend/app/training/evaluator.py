@@ -108,6 +108,7 @@ class EvaluationRunner:
         num_episodes: int = DEFAULT_NUM_EPISODES,
         seed: Optional[int] = None,
         stop_flag: Optional[Callable[[], bool]] = None,
+        on_episode_complete: Optional[Callable[[int, int], None]] = None,
         stream_frames: bool = True,
         target_fps: int = DEFAULT_TARGET_FPS,
         verbose: int = 1,
@@ -122,6 +123,7 @@ class EvaluationRunner:
             num_episodes: Number of evaluation episodes
             seed: Random seed (optional)
             stop_flag: Callable that returns True to stop evaluation
+            on_episode_complete: Progress callback (current_episode, total_episodes)
             stream_frames: Whether to stream live frames
             target_fps: Target frames per second for streaming
             verbose: Verbosity level (0=silent, 1=info, 2=debug)
@@ -132,6 +134,7 @@ class EvaluationRunner:
         self.num_episodes = num_episodes
         self.seed = seed
         self.stop_flag = stop_flag or (lambda: False)
+        self.on_episode_complete = on_episode_complete
         self.stream_frames = stream_frames
         self.target_fps = min(30, max(1, target_fps))  # Clamp to 1-30
         self.verbose = verbose
@@ -294,6 +297,8 @@ class EvaluationRunner:
 
                 result = self._run_episode(ep_num)
                 episode_results.append(result)
+                if self.on_episode_complete:
+                    self.on_episode_complete(ep_num + 1, self.num_episodes)
 
                 # Publish episode metric so frontend reward history updates during Test
                 metrics_pubsub.publish_metric(
@@ -423,7 +428,17 @@ class EvaluationRunner:
         # Find the actual video file created by RecordVideo
         # RecordVideo creates files like: {name_prefix}-episode-{ep}.mp4
         video_files = sorted(video_path.parent.glob(f"{video_path.stem}*.mp4"))
-        actual_video_path = str(video_files[-1]) if video_files else None
+        actual_video_path: Optional[str] = None
+        if video_files:
+            # Keep only one canonical MP4 per evaluation so artifact URLs are stable.
+            latest_video = video_files[-1]
+            for old_video in video_files[:-1]:
+                old_video.unlink(missing_ok=True)
+            if latest_video != video_path:
+                latest_video.replace(video_path)
+            actual_video_path = (
+                f"/api/v1/runs/{self.run_id}/artifacts/eval/{video_path.name}"
+            )
 
         return EvaluationSummary(
             num_episodes=len(episodes),

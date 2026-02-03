@@ -5,6 +5,15 @@
 // API base URL - defaults to localhost:8000 for development
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 
+async function getErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const error = await response.json()
+    return error.error?.message || fallback
+  } catch {
+    return fallback
+  }
+}
+
 /**
  * Environment metadata from the backend
  */
@@ -85,8 +94,9 @@ export async function createRun(config: RunConfig): Promise<ApiRun> {
     body: JSON.stringify(config),
   })
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error?.message || `Failed to create run: ${response.statusText}`)
+    throw new Error(
+      await getErrorMessage(response, `Failed to create run: ${response.statusText}`)
+    )
   }
   return response.json()
 }
@@ -99,8 +109,9 @@ export async function startTraining(runId: string): Promise<{ id: string; status
     method: 'POST',
   })
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error?.message || `Failed to start training: ${response.statusText}`)
+    throw new Error(
+      await getErrorMessage(response, `Failed to start training: ${response.statusText}`)
+    )
   }
   return response.json()
 }
@@ -113,8 +124,9 @@ export async function stopTraining(runId: string): Promise<{ id: string; status:
     method: 'POST',
   })
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error?.message || `Failed to stop training: ${response.statusText}`)
+    throw new Error(
+      await getErrorMessage(response, `Failed to stop training: ${response.statusText}`)
+    )
   }
   return response.json()
 }
@@ -139,8 +151,9 @@ export async function triggerEvaluation(
     }),
   })
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error?.message || `Failed to trigger evaluation: ${response.statusText}`)
+    throw new Error(
+      await getErrorMessage(response, `Failed to trigger evaluation: ${response.statusText}`)
+    )
   }
   return response.json()
 }
@@ -149,9 +162,13 @@ export async function triggerEvaluation(
  * Get run details
  */
 export async function getRun(runId: string): Promise<ApiRun> {
-  const response = await fetch(`${API_BASE_URL}/runs/${runId}`)
+  const response = await fetch(`${API_BASE_URL}/runs/${runId}`, {
+    cache: 'no-store',
+  })
   if (!response.ok) {
-    throw new Error(`Failed to fetch run: ${response.statusText}`)
+    throw new Error(
+      await getErrorMessage(response, `Failed to fetch run: ${response.statusText}`)
+    )
   }
   return response.json()
 }
@@ -172,9 +189,11 @@ export async function listRuns(params?: {
   if (params?.offset) searchParams.set('offset', params.offset.toString())
 
   const url = `${API_BASE_URL}/runs${searchParams.toString() ? `?${searchParams}` : ''}`
-  const response = await fetch(url)
+  const response = await fetch(url, { cache: 'no-store' })
   if (!response.ok) {
-    throw new Error(`Failed to list runs: ${response.statusText}`)
+    throw new Error(
+      await getErrorMessage(response, `Failed to list runs: ${response.statusText}`)
+    )
   }
   return response.json()
 }

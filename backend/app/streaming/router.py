@@ -12,7 +12,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, Request, status
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.db import runs_repository, events_repository
@@ -34,6 +34,7 @@ router = APIRouter(prefix="/runs", tags=["streaming"])
 # ============================================================================
 
 async def metrics_event_generator(
+    request: Request,
     run_id: str,
     last_event_id: Optional[int] = None,
 ):
@@ -62,9 +63,12 @@ async def metrics_event_generator(
         yield f"event: heartbeat\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
         
         heartbeat_interval = 30  # seconds
-        last_heartbeat = asyncio.get_event_loop().time()
+        loop = asyncio.get_running_loop()
+        last_heartbeat = loop.time()
         
         while True:
+            if await request.is_disconnected():
+                break
             try:
                 # Wait for message with timeout for heartbeat
                 msg = await asyncio.wait_for(queue.get(), timeout=1.0)
@@ -84,15 +88,15 @@ async def metrics_event_generator(
                         
             except asyncio.TimeoutError:
                 # Check if we need to send heartbeat
-                current_time = asyncio.get_event_loop().time()
+                current_time = loop.time()
                 if current_time - last_heartbeat >= heartbeat_interval:
                     yield f"event: heartbeat\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
                     last_heartbeat = current_time
                 
                 # Check if run is still active
                 run = runs_repository.get_run(run_id)
-                if run and run["status"] not in ("training", "pending"):
-                    # Training has ended
+                if run and run["status"] not in ("training", "pending", "evaluating"):
+                    # Run has ended
                     yield f"event: training_complete\ndata: {json.dumps({'status': run['status']})}\n\n"
                     break
                     
@@ -140,7 +144,7 @@ async def stream_metrics(
             pass
     
     return StreamingResponse(
-        metrics_event_generator(run_id, last_event_id),
+        metrics_event_generator(request, run_id, last_event_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -155,6 +159,7 @@ async def stream_metrics(
 # ============================================================================
 
 async def events_event_generator(
+    request: Request,
     run_id: str,
     last_event_id: Optional[int] = None,
 ):
@@ -194,9 +199,12 @@ async def events_event_generator(
     
     try:
         heartbeat_interval = 30
-        last_heartbeat = asyncio.get_event_loop().time()
+        loop = asyncio.get_running_loop()
+        last_heartbeat = loop.time()
         
         while True:
+            if await request.is_disconnected():
+                break
             try:
                 msg = await asyncio.wait_for(queue.get(), timeout=1.0)
                 
@@ -205,7 +213,7 @@ async def events_event_generator(
                     yield f"event: event\nid: {msg.id}\ndata: {json.dumps(data)}\n\n"
                     
             except asyncio.TimeoutError:
-                current_time = asyncio.get_event_loop().time()
+                current_time = loop.time()
                 if current_time - last_heartbeat >= heartbeat_interval:
                     yield f"event: heartbeat\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
                     last_heartbeat = current_time
@@ -249,7 +257,7 @@ async def stream_events(
             pass
     
     return StreamingResponse(
-        events_event_generator(run_id, last_event_id),
+        events_event_generator(request, run_id, last_event_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

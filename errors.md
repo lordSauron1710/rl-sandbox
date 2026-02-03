@@ -57,6 +57,30 @@ This file tracks errors encountered during development so we can avoid repeating
 
 ---
 
+### 1.5 Metrics SSE closed during evaluation
+
+**Symptom:** Clicking TEST started evaluation, but reward history/metrics stopped updating quickly even though evaluation was running.
+
+**Root cause:** `metrics_event_generator` considered only `pending` and `training` as active statuses. When run status became `evaluating`, the timeout branch emitted `training_complete` and closed the SSE stream.
+
+**Fix (latest, working):** Treat `evaluating` as an active streaming state in the SSE generator (`training`, `pending`, `evaluating`). The stream now stays open during evaluation and only closes when the run reaches a terminal status.
+
+**Lesson:** Stream lifecycle checks must include *all* producer states that can emit data, not just training.
+
+---
+
+### 1.6 Cross-thread pub/sub writes on asyncio.Queue
+
+**Symptom:** Intermittent lost stream updates or unstable behavior under load.
+
+**Root cause:** Training/evaluation run in background threads and published directly with `asyncio.Queue.put_nowait()`. `asyncio.Queue` is not thread-safe for direct cross-thread writes.
+
+**Fix (latest, working):** Store each subscriber’s event loop and queue, then publish via `loop.call_soon_threadsafe(...)` to enqueue messages safely on the owning loop thread. Also clean up stale subscribers when loops close.
+
+**Lesson:** For thread→async communication, always hop through the target loop with thread-safe scheduling.
+
+---
+
 ## 2. Backend: frame encoding & environment differences
 
 ### 2.1 Render output dtype (float vs uint8)
@@ -89,6 +113,18 @@ Then encode to JPEG as usual. Applied in `backend/app/training/callback.py` (`_m
 
 ---
 
+### 3.2 Hook swallowed async errors, UI reported false success
+
+**Symptom:** UI sometimes logged “Training started”/“Evaluation started” even when backend calls failed.
+
+**Root cause:** `useTraining` caught errors and set internal `error` state but did not rethrow, so callers’ `try/catch` blocks saw a resolved Promise and ran success paths.
+
+**Fix (latest, working):** Re-throw caught errors from `createAndStartTraining`, `stop`, and `evaluate` after setting hook error state. Callers now correctly branch to error handling and do not emit false success events.
+
+**Lesson:** If callers rely on async control flow, hooks should not swallow operational errors.
+
+---
+
 ## 4. Categorisation summary
 
 | Category              | Error / risk                                      | Type        | Where / when                          |
@@ -97,7 +133,10 @@ Then encode to JPEG as usual. Applied in `backend/app/training/callback.py` (`_m
 | Streaming / timing    | Same for evaluation (Test)                         | Logic bug  | Frontend connect effect vs evaluate     |
 | Streaming / timing    | Effect cleanup briefly disconnects before connect  | Ordering   | React effect deps + cleanup            |
 | Backend / encoding    | Float or non-uint8 render output                   | Assumption | Callback + evaluator frame encoding     |
+| Streaming / lifecycle | Metrics SSE closed when status became evaluating   | Logic bug  | SSE active-status check in stream router |
+| Streaming / infra     | Cross-thread asyncio queue publish                 | Concurrency| Training/eval threads -> async subscribers |
 | Frontend / state      | Page calling setState for hook-owned state         | API misuse | handleTrain / useTraining               |
+| Frontend / state      | Hook swallowed async errors                         | Flow bug   | useTraining success/error propagation    |
 
 ---
 

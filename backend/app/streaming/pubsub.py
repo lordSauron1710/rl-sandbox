@@ -10,10 +10,9 @@ import asyncio
 import threading
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set, Callable
-import queue
+from typing import Any, Dict, Optional, Set
 
 
 @dataclass
@@ -49,58 +48,78 @@ class FrameMessage:
     total_reward: float
 
 
+@dataclass(frozen=True)
+class Subscriber:
+    """Subscriber queue + owning event loop for thread-safe delivery."""
+    queue: asyncio.Queue
+    loop: asyncio.AbstractEventLoop
+
+
 class BasePubSub:
     """Base class for pub/sub systems."""
 
     def __init__(self):
-        self._subscribers: Dict[str, Set[asyncio.Queue]] = defaultdict(set)
+        self._subscribers: Dict[str, Set[Subscriber]] = defaultdict(set)
         self._lock = threading.Lock()
 
     def subscribe(self, run_id: str) -> asyncio.Queue:
         """Subscribe to updates for a run."""
         q: asyncio.Queue = asyncio.Queue(maxsize=100)
+        subscriber = Subscriber(queue=q, loop=asyncio.get_running_loop())
         with self._lock:
-            self._subscribers[run_id].add(q)
+            self._subscribers[run_id].add(subscriber)
         return q
 
     def unsubscribe(self, run_id: str, q: asyncio.Queue) -> None:
         """Unsubscribe from updates."""
         with self._lock:
-            self._subscribers[run_id].discard(q)
-            if not self._subscribers[run_id]:
+            subscribers = self._subscribers.get(run_id)
+            if not subscribers:
+                return
+            subscribers_to_remove = {s for s in subscribers if s.queue is q}
+            subscribers.difference_update(subscribers_to_remove)
+            if not subscribers:
                 del self._subscribers[run_id]
 
-    async def _publish_async(self, run_id: str, message: Any) -> None:
-        """Publish a message to all subscribers asynchronously."""
-        with self._lock:
-            queues = list(self._subscribers.get(run_id, []))
-
-        for q in queues:
+    @staticmethod
+    def _enqueue(q: asyncio.Queue, message: Any) -> None:
+        """Push a message into a queue without blocking (drop oldest on overflow)."""
+        try:
+            q.put_nowait(message)
+        except asyncio.QueueFull:
             try:
-                # Non-blocking put, drop if full
+                q.get_nowait()
                 q.put_nowait(message)
-            except asyncio.QueueFull:
-                # Drop oldest message and add new one
-                try:
-                    q.get_nowait()
-                    q.put_nowait(message)
-                except (asyncio.QueueEmpty, asyncio.QueueFull):
-                    pass
+            except (asyncio.QueueEmpty, asyncio.QueueFull):
+                pass
 
     def publish(self, run_id: str, message: Any) -> None:
-        """Publish a message from a sync context (schedules async publish)."""
+        """Publish from any thread using each subscriber loop safely."""
         with self._lock:
-            queues = list(self._subscribers.get(run_id, []))
-
-        for q in queues:
+            subscribers = list(self._subscribers.get(run_id, set()))
+        stale_subscribers: list[Subscriber] = []
+        for subscriber in subscribers:
+            if subscriber.loop.is_closed():
+                stale_subscribers.append(subscriber)
+                continue
             try:
-                q.put_nowait(message)
-            except asyncio.QueueFull:
-                try:
-                    q.get_nowait()
-                    q.put_nowait(message)
-                except (asyncio.QueueEmpty, asyncio.QueueFull):
-                    pass
+                subscriber.loop.call_soon_threadsafe(
+                    self._enqueue,
+                    subscriber.queue,
+                    message,
+                )
+            except RuntimeError:
+                stale_subscribers.append(subscriber)
+
+        if stale_subscribers:
+            with self._lock:
+                live_subscribers = self._subscribers.get(run_id)
+                if not live_subscribers:
+                    return
+                for stale in stale_subscribers:
+                    live_subscribers.discard(stale)
+                if not live_subscribers:
+                    del self._subscribers[run_id]
 
     def get_subscriber_count(self, run_id: str) -> int:
         """Get number of subscribers for a run."""
@@ -170,12 +189,18 @@ class MetricsPubSub(BasePubSub):
             self.publish(run_id, msg)
             self._last_publish_time[run_id] = time.time()
 
-    def publish_training_complete(self, run_id: str, final_episode: int, 
-                                   total_timesteps: int, status: str) -> None:
+    def publish_training_complete(
+        self,
+        run_id: str,
+        final_episode: int,
+        total_timesteps: int,
+        status: str,
+    ) -> None:
         """Publish training completion event."""
         self.flush_pending(run_id)
+        event_type = "training_stopped" if status == "stopped" else "training_complete"
         msg = {
-            "type": "training_complete",
+            "type": event_type,
             "final_episode": final_episode,
             "total_timesteps": total_timesteps,
             "status": status,

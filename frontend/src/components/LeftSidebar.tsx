@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect } from 'react'
 import { ApiEnvironment } from '@/services/api'
 import { EnvironmentCard, EnvironmentCardSkeleton } from './EnvironmentCard'
 import { HyperparametersForm } from './HyperparametersForm'
@@ -49,13 +49,14 @@ export function LeftSidebar({
   // Determine available algorithms based on selected environment
   const selectedEnv = environments.find((e) => e.id === selectedEnvId)
   const supportedAlgorithms = selectedEnv?.supported_algorithms || ['PPO']
-  const isDQNAvailable = supportedAlgorithms.includes('DQN')
 
   // If current algorithm is not supported, switch to PPO
   const effectiveAlgorithm = supportedAlgorithms.includes(algorithm) ? algorithm : 'PPO'
-  if (effectiveAlgorithm !== algorithm && selectedEnv) {
-    onAlgorithmChange(effectiveAlgorithm)
-  }
+  useEffect(() => {
+    if (effectiveAlgorithm !== algorithm && selectedEnv) {
+      onAlgorithmChange(effectiveAlgorithm)
+    }
+  }, [effectiveAlgorithm, algorithm, selectedEnv, onAlgorithmChange])
 
   const isOperationInProgress = isTraining || isTesting || isCreatingRun
 
