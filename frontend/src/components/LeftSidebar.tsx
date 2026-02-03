@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { ApiEnvironment } from '@/services/api'
+import { ApiEnvironment, PresetName, type AlgorithmName } from '@/services/api'
 import { EnvironmentCard, EnvironmentCardSkeleton } from './EnvironmentCard'
 import { HyperparametersForm } from './HyperparametersForm'
 import { LoadingButton } from './LoadingButton'
@@ -11,8 +11,13 @@ interface LeftSidebarProps {
   isLoadingEnvironments?: boolean
   selectedEnvId: string | null
   onSelectEnvironment: (envId: string) => void
-  algorithm: string
-  onAlgorithmChange: (algorithm: string) => void
+  algorithm: AlgorithmName
+  onAlgorithmChange: (algorithm: AlgorithmName) => void
+  selectedPreset: PresetName
+  onPresetChange: (preset: PresetName) => void
+  presetOptions: Array<{ id: PresetName; label: string; description: string }>
+  isLoadingPresets?: boolean
+  presetsError?: string | null
   learningRate: string
   onLearningRateChange: (rate: string) => void
   totalTimesteps: string
@@ -38,6 +43,11 @@ export function LeftSidebar({
   onSelectEnvironment,
   algorithm,
   onAlgorithmChange,
+  selectedPreset,
+  onPresetChange,
+  presetOptions,
+  isLoadingPresets = false,
+  presetsError = null,
   learningRate,
   onLearningRateChange,
   totalTimesteps,
@@ -56,7 +66,9 @@ export function LeftSidebar({
 }: LeftSidebarProps) {
   // Determine available algorithms based on selected environment
   const selectedEnv = environments.find((e) => e.id === selectedEnvId)
-  const supportedAlgorithms = selectedEnv?.supported_algorithms || ['PPO']
+  const supportedAlgorithms = (selectedEnv?.supported_algorithms || ['PPO']).filter(
+    (candidate): candidate is AlgorithmName => candidate === 'PPO' || candidate === 'DQN'
+  )
 
   // If current algorithm is not supported, switch to PPO
   const effectiveAlgorithm = supportedAlgorithms.includes(algorithm) ? algorithm : 'PPO'
@@ -104,6 +116,11 @@ export function LeftSidebar({
         <HyperparametersForm
           algorithm={effectiveAlgorithm}
           onAlgorithmChange={onAlgorithmChange}
+          selectedPreset={selectedPreset}
+          onPresetChange={onPresetChange}
+          presetOptions={presetOptions}
+          isLoadingPresets={isLoadingPresets}
+          presetsError={presetsError}
           learningRate={learningRate}
           onLearningRateChange={onLearningRateChange}
           totalTimesteps={totalTimesteps}

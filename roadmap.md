@@ -408,7 +408,7 @@ Implement basic analysis insights for the Analysis & Explainer panel.
 ---
 
 ### Prompt 15 — Presets mapping + bounds
-// NOT STARTED
+// EXECUTED
 
 Finalize preset configurations and safety bounds.
 
@@ -497,6 +497,7 @@ Configure deployment for production.
   - Deployment guide in README or docs/
   - Environment variable reference
   - Troubleshooting common issues
+  - Security note: follow industry-standard deployment practices; never commit or expose secrets (e.g. `.env`, tokens, API keys); use platform-managed environment variables/secrets and keep sensitive files gitignored
 
 **Output:**
 - `fly.toml` for backend

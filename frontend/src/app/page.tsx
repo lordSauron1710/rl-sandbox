@@ -19,7 +19,11 @@ import {
   useEventLog,
 } from '@/hooks'
 import {
+  AlgorithmName,
+  AlgorithmPresetTable,
+  PresetName,
   EvaluationSummary,
+  fetchRunPresets,
   getLatestEvaluation,
   getLatestEvaluationVideoUrl,
   toAbsoluteApiUrl,
@@ -53,12 +57,17 @@ const algorithmExplanations: Record<string, AlgorithmInfo> = {
 const DEFAULT_LEARNING_RATE = '0.0003'
 const DEFAULT_TOTAL_TIMESTEPS = '1,000,000'
 const DEFAULT_EVAL_EPISODES = 10
+const DEFAULT_PRESET: PresetName = 'stable'
 
 /**
  * Parse timesteps string (with commas) to number
  */
 function parseTimesteps(value: string): number {
   return parseInt(value.replace(/,/g, ''), 10) || 1000000
+}
+
+function formatTimesteps(value: number): string {
+  return Math.max(1, Math.floor(value)).toLocaleString('en-US')
 }
 
 function clampPercent(value: number | undefined): number {
@@ -127,9 +136,15 @@ export default function Home() {
   }, [environments, selectedEnvId])
 
   // Hyperparameters state
-  const [algorithm, setAlgorithm] = useState('PPO')
+  const [algorithm, setAlgorithm] = useState<AlgorithmName>('PPO')
+  const [selectedPreset, setSelectedPreset] = useState<PresetName>(DEFAULT_PRESET)
   const [learningRate, setLearningRate] = useState(DEFAULT_LEARNING_RATE)
   const [totalTimesteps, setTotalTimesteps] = useState(DEFAULT_TOTAL_TIMESTEPS)
+  const [presetTables, setPresetTables] = useState<
+    Partial<Record<AlgorithmName, AlgorithmPresetTable>>
+  >({})
+  const [isLoadingPresets, setIsLoadingPresets] = useState(false)
+  const [presetsError, setPresetsError] = useState<string | null>(null)
 
   // Metrics state (local fallback + computed from stream)
   const [metrics, setMetrics] = useState<Metrics>({
@@ -151,10 +166,108 @@ export default function Home() {
     () => environments.find((environment) => environment.id === selectedEnvId) ?? null,
     [environments, selectedEnvId]
   )
+  const activePresetTable = presetTables[algorithm] ?? null
+  const presetOptions = useMemo(() => {
+    if (!activePresetTable) return []
+    const order: PresetName[] = ['fast', 'stable', 'high_score']
+    return order
+      .map((presetName) => {
+        const entry = activePresetTable.presets[presetName]
+        if (!entry) return null
+        return {
+          id: presetName,
+          label: entry.label,
+          description: entry.description,
+        }
+      })
+      .filter((entry): entry is { id: PresetName; label: string; description: string } => entry !== null)
+  }, [activePresetTable])
   const currentRunIdRef = useRef<string | null>(null)
   const previousRunStatusRef = useRef<string | null>(null)
   const evaluationRequestedAtRef = useRef<number | null>(null)
   const evaluationFetchInFlightRef = useRef(false)
+  const hasAppliedInitialPresetRef = useRef(false)
+  const previousAlgorithmRef = useRef<AlgorithmName>(algorithm)
+
+  const applyPresetToForm = useCallback(
+    (presetName: PresetName, targetAlgorithm: AlgorithmName) => {
+      const table = presetTables[targetAlgorithm]
+      const preset = table?.presets?.[presetName]
+      if (!preset) return
+      setLearningRate(String(preset.hyperparameters.learning_rate))
+      setTotalTimesteps(formatTimesteps(preset.hyperparameters.total_timesteps))
+    },
+    [presetTables]
+  )
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadPresets = async () => {
+      setIsLoadingPresets(true)
+      try {
+        const tables = await fetchRunPresets()
+        if (isCancelled) return
+
+        const mapped: Partial<Record<AlgorithmName, AlgorithmPresetTable>> = {}
+        for (const table of tables) {
+          mapped[table.algorithm] = table
+        }
+        setPresetTables(mapped)
+        setPresetsError(null)
+      } catch (err) {
+        if (isCancelled) return
+        const message =
+          err instanceof Error ? err.message : 'Failed to load preset defaults'
+        setPresetsError(message)
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingPresets(false)
+        }
+      }
+    }
+
+    void loadPresets()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activePresetTable) return
+
+    const validPreset =
+      activePresetTable.presets[selectedPreset] !== undefined
+        ? selectedPreset
+        : activePresetTable.default_preset
+
+    if (validPreset !== selectedPreset) {
+      setSelectedPreset(validPreset)
+      return
+    }
+
+    if (!hasAppliedInitialPresetRef.current) {
+      applyPresetToForm(validPreset, algorithm)
+      hasAppliedInitialPresetRef.current = true
+    }
+  }, [activePresetTable, algorithm, applyPresetToForm, selectedPreset])
+
+  useEffect(() => {
+    if (!activePresetTable) return
+    if (previousAlgorithmRef.current === algorithm) return
+
+    const validPreset =
+      activePresetTable.presets[selectedPreset] !== undefined
+        ? selectedPreset
+        : activePresetTable.default_preset
+
+    if (validPreset !== selectedPreset) {
+      setSelectedPreset(validPreset)
+    }
+    applyPresetToForm(validPreset, algorithm)
+    previousAlgorithmRef.current = algorithm
+  }, [activePresetTable, algorithm, applyPresetToForm, selectedPreset])
 
   const resolvePlaybackUrl = useCallback(
     (runId: string, summary: EvaluationSummary) => {
@@ -422,6 +535,14 @@ export default function Home() {
     setPlaybackError('Failed to load evaluation playback.')
   }, [addLocalEvent, playbackError])
 
+  const handlePresetChange = useCallback(
+    (preset: PresetName) => {
+      setSelectedPreset(preset)
+      applyPresetToForm(preset, algorithm)
+    },
+    [algorithm, applyPresetToForm]
+  )
+
   // Handlers
   const handleTrain = async () => {
     if (!selectedEnvId) return
@@ -448,6 +569,7 @@ export default function Home() {
         {
           env_id: selectedEnvId,
           algorithm,
+          preset: selectedPreset,
           hyperparameters: {
             learning_rate: safeLearningRate,
             total_timesteps: parseTimesteps(totalTimesteps),
@@ -568,6 +690,7 @@ export default function Home() {
     setLearningRate(DEFAULT_LEARNING_RATE)
     setTotalTimesteps(DEFAULT_TOTAL_TIMESTEPS)
     setAlgorithm('PPO')
+    setSelectedPreset(DEFAULT_PRESET)
     setLatestEvaluationSummary(null)
     setEvaluationPlaybackUrl(null)
     setPlaybackError(null)
@@ -696,6 +819,11 @@ export default function Home() {
           onSelectEnvironment={setSelectedEnvId}
           algorithm={algorithm}
           onAlgorithmChange={setAlgorithm}
+          selectedPreset={selectedPreset}
+          onPresetChange={handlePresetChange}
+          presetOptions={presetOptions}
+          isLoadingPresets={isLoadingPresets}
+          presetsError={presetsError}
           learningRate={learningRate}
           onLearningRateChange={setLearningRate}
           totalTimesteps={totalTimesteps}

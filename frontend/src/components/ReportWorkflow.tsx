@@ -164,8 +164,9 @@ export function ReportWorkflow({
           <div className="min-h-0 p-3">
             {selectedReport ? (
               <div className="flex h-full min-h-0 flex-col">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
-                  <div>
+                <div className="border-b border-border pb-3">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0">
                     <div className="label mb-1">SELECTED REPORT</div>
                     <div className="font-mono text-[11px] text-black break-all">
                       {selectedReport.reportLabel}
@@ -173,41 +174,57 @@ export function ReportWorkflow({
                     <div className="text-[10px] text-text-secondary">
                       {formatGeneratedAt(selectedReport.generatedAt)}
                     </div>
-                  </div>
+                    </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      className={`btn w-auto px-3 py-1.5 text-[10px] ${
-                        activeFormat === 'text' ? 'btn-primary' : 'btn-secondary'
-                      }`}
-                      onClick={() => setActiveFormat('text')}
-                    >
-                      VIEW TXT
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn w-auto px-3 py-1.5 text-[10px] ${
-                        activeFormat === 'json' ? 'btn-primary' : 'btn-secondary'
-                      }`}
-                      onClick={() => setActiveFormat('json')}
-                    >
-                      VIEW JSON
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary w-auto px-3 py-1.5 text-[10px]"
-                      onClick={() => onDownload(selectedReport, 'text')}
-                    >
-                      DOWNLOAD TXT
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary w-auto px-3 py-1.5 text-[10px]"
-                      onClick={() => onDownload(selectedReport, 'json')}
-                    >
-                      DOWNLOAD JSON
-                    </button>
+                    <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
+                      <div
+                        className="inline-flex overflow-hidden rounded-full border border-black"
+                        role="tablist"
+                        aria-label="Report view format"
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={activeFormat === 'text'}
+                          className={`px-3 py-1.5 text-[10px] uppercase tracking-wider transition-colors ${
+                            activeFormat === 'text'
+                              ? 'bg-black text-white'
+                              : 'bg-white text-black hover:bg-surface-secondary'
+                          }`}
+                          onClick={() => setActiveFormat('text')}
+                        >
+                          View TXT
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={activeFormat === 'json'}
+                          className={`border-l border-black px-3 py-1.5 text-[10px] uppercase tracking-wider transition-colors ${
+                            activeFormat === 'json'
+                              ? 'bg-black text-white'
+                              : 'bg-white text-black hover:bg-surface-secondary'
+                          }`}
+                          onClick={() => setActiveFormat('json')}
+                        >
+                          View JSON
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary w-auto px-3 py-1.5 text-[10px]"
+                        onClick={() => onDownload(selectedReport, 'text')}
+                      >
+                        DOWNLOAD TXT
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary w-auto px-3 py-1.5 text-[10px]"
+                        onClick={() => onDownload(selectedReport, 'json')}
+                      >
+                        DOWNLOAD JSON
+                      </button>
+                    </div>
                   </div>
                 </div>
 

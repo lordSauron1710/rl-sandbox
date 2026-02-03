@@ -3,12 +3,13 @@ Run endpoints for RL Gym Visualizer.
 """
 import json
 import re
+from enum import Enum
 from typing import Optional, List, Any
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, ValidationError
 
 from app.db import runs_repository, events_repository
 from app.models.run import RunStatus, EvaluationConfig, EvaluationSummary as EvalSummaryModel
@@ -16,6 +17,15 @@ from app.models.event import EventType
 from app.models.environment import get_environment
 from app.storage.run_storage import RunStorage
 from app.training import get_training_manager
+from app.training.presets import (
+    ALGORITHM_DEFAULT_PRESET,
+    ALGORITHM_HYPERPARAMETER_FIELDS,
+    HYPERPARAMETER_BOUNDS,
+    PRESET_TABLES,
+    build_hyperparameters,
+    filter_hyperparameters_for_algorithm,
+    get_bounds_for_algorithm,
+)
 
 # UUID v4 pattern for run_id validation (path traversal prevention)
 UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
@@ -29,20 +39,66 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 class Hyperparameters(BaseModel):
     """Hyperparameters for training."""
-    learning_rate: float = Field(default=0.0003, ge=1e-6, le=1.0)
-    total_timesteps: int = Field(default=1000000, ge=1000, le=10000000)
+    model_config = ConfigDict(extra="forbid")
+
+    learning_rate: float = Field(
+        default=0.0003,
+        ge=HYPERPARAMETER_BOUNDS["learning_rate"]["min"],
+        le=HYPERPARAMETER_BOUNDS["learning_rate"]["max"],
+    )
+    total_timesteps: int = Field(
+        default=1000000,
+        ge=HYPERPARAMETER_BOUNDS["total_timesteps"]["min"],
+        le=HYPERPARAMETER_BOUNDS["total_timesteps"]["max"],
+    )
     # Optional algorithm-specific params
-    batch_size: Optional[int] = Field(default=64, ge=1)
-    n_steps: Optional[int] = Field(default=2048, ge=1)
-    gamma: Optional[float] = Field(default=0.99, ge=0, le=1)
-    buffer_size: Optional[int] = Field(default=100000, ge=1000)
-    exploration_fraction: Optional[float] = Field(default=0.1, ge=0, le=1)
+    batch_size: Optional[int] = Field(
+        default=64,
+        ge=HYPERPARAMETER_BOUNDS["batch_size"]["min"],
+        le=HYPERPARAMETER_BOUNDS["batch_size"]["max"],
+    )
+    n_steps: Optional[int] = Field(
+        default=2048,
+        ge=HYPERPARAMETER_BOUNDS["n_steps"]["min"],
+        le=HYPERPARAMETER_BOUNDS["n_steps"]["max"],
+    )
+    gamma: Optional[float] = Field(
+        default=0.99,
+        ge=HYPERPARAMETER_BOUNDS["gamma"]["min"],
+        le=HYPERPARAMETER_BOUNDS["gamma"]["max"],
+    )
+    buffer_size: Optional[int] = Field(
+        default=100000,
+        ge=HYPERPARAMETER_BOUNDS["buffer_size"]["min"],
+        le=HYPERPARAMETER_BOUNDS["buffer_size"]["max"],
+    )
+    exploration_fraction: Optional[float] = Field(
+        default=0.1,
+        ge=HYPERPARAMETER_BOUNDS["exploration_fraction"]["min"],
+        le=HYPERPARAMETER_BOUNDS["exploration_fraction"]["max"],
+    )
+    exploration_final_eps: Optional[float] = Field(
+        default=0.02,
+        ge=HYPERPARAMETER_BOUNDS["exploration_final_eps"]["min"],
+        le=HYPERPARAMETER_BOUNDS["exploration_final_eps"]["max"],
+    )
+
+
+class PresetName(str, Enum):
+    """Supported preset names."""
+    FAST = "fast"
+    STABLE = "stable"
+    HIGH_SCORE = "high_score"
 
 
 class RunCreateRequest(BaseModel):
     """Request schema for creating a new run."""
     env_id: str = Field(..., description="Environment ID")
     algorithm: str = Field(..., pattern="^(PPO|DQN)$", description="Algorithm: PPO or DQN")
+    preset: Optional[PresetName] = Field(
+        default=None,
+        description="Preset profile: fast, stable, or high_score",
+    )
     hyperparameters: Hyperparameters = Field(default_factory=Hyperparameters)
     seed: Optional[int] = Field(default=None, ge=0)
 
@@ -51,6 +107,7 @@ class RunConfig(BaseModel):
     """Full run configuration."""
     env_id: str
     algorithm: str
+    preset: Optional[str] = None
     hyperparameters: dict
     seed: Optional[int] = None
 
@@ -128,6 +185,7 @@ class RunConfigResponse(BaseModel):
     """Response schema for run configuration artifact."""
     env_id: str
     algorithm: str
+    preset: Optional[str] = None
     hyperparameters: dict
     seed: Optional[int] = None
 
@@ -148,6 +206,20 @@ class MetricsResponse(BaseModel):
     run_id: str
     total_entries: int
     metrics: List[dict]
+
+
+class AlgorithmPresetResponse(BaseModel):
+    """Preset + bounds table for one algorithm."""
+    algorithm: str
+    default_preset: str
+    allowed_hyperparameters: List[str]
+    bounds: dict
+    presets: dict
+
+
+class PresetsResponse(BaseModel):
+    """Response schema for preset tables."""
+    algorithms: List[AlgorithmPresetResponse]
 
 
 # ============================================================================
@@ -255,6 +327,7 @@ def _build_run_response(run_dict: dict) -> RunResponse:
         config=RunConfig(
             env_id=config_data.get("env_id", run_dict["env_id"]),
             algorithm=config_data.get("algorithm", run_dict["algorithm"]),
+            preset=config_data.get("preset"),
             hyperparameters=config_data.get("hyperparameters", {}),
             seed=config_data.get("seed"),
         ),
@@ -299,6 +372,107 @@ def _validate_env_algorithm(env_id: str, algorithm: str) -> None:
         )
 
 
+def _format_pydantic_errors(exc: ValidationError) -> list[dict]:
+    """Normalize pydantic validation errors for API responses."""
+    return [
+        {
+            "field": ".".join(str(part) for part in err.get("loc", [])),
+            "message": err.get("msg", "Invalid value"),
+            "type": err.get("type", "validation_error"),
+        }
+        for err in exc.errors()
+    ]
+
+
+def _validate_hyperparameter_relationships(algorithm: str, hyperparameters: Hyperparameters) -> None:
+    """Validate cross-field and algorithm-specific hyperparameter rules."""
+    issues: List[str] = []
+
+    if hyperparameters.batch_size and hyperparameters.total_timesteps:
+        if hyperparameters.batch_size > hyperparameters.total_timesteps:
+            issues.append("batch_size must be less than or equal to total_timesteps")
+
+    if algorithm == "PPO":
+        if hyperparameters.n_steps is None:
+            issues.append("n_steps is required for PPO")
+        elif hyperparameters.batch_size and hyperparameters.batch_size > hyperparameters.n_steps:
+            issues.append("batch_size must be less than or equal to n_steps for PPO")
+        elif hyperparameters.batch_size and hyperparameters.n_steps % hyperparameters.batch_size != 0:
+            issues.append("n_steps must be divisible by batch_size for PPO")
+
+    if algorithm == "DQN":
+        if hyperparameters.buffer_size is None:
+            issues.append("buffer_size is required for DQN")
+        elif hyperparameters.batch_size and hyperparameters.buffer_size < hyperparameters.batch_size:
+            issues.append("buffer_size must be greater than or equal to batch_size for DQN")
+
+    if issues:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "invalid_hyperparameters",
+                    "message": "Invalid hyperparameter combination",
+                    "details": {
+                        "algorithm": algorithm,
+                        "issues": issues,
+                    },
+                }
+            },
+        )
+
+
+def _resolve_hyperparameters(request: RunCreateRequest) -> tuple[str, dict]:
+    """Resolve preset defaults + explicit overrides and validate final config."""
+    selected_preset = request.preset.value if request.preset else ALGORITHM_DEFAULT_PRESET[request.algorithm]
+    overrides = request.hyperparameters.model_dump(exclude_none=True, exclude_unset=True)
+
+    try:
+        merged = build_hyperparameters(
+            algorithm=request.algorithm,
+            preset=selected_preset,
+            overrides=overrides,
+        )
+        validated = Hyperparameters(**merged)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "invalid_preset",
+                    "message": str(exc),
+                    "details": {
+                        "algorithm": request.algorithm,
+                        "preset": selected_preset,
+                    },
+                }
+            },
+        ) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "validation_error",
+                    "message": "Hyperparameter values are out of allowed bounds",
+                    "details": {
+                        "algorithm": request.algorithm,
+                        "preset": selected_preset,
+                        "issues": _format_pydantic_errors(exc),
+                    },
+                }
+            },
+        ) from exc
+
+    _validate_hyperparameter_relationships(request.algorithm, validated)
+
+    filtered_hyperparameters = filter_hyperparameters_for_algorithm(
+        request.algorithm,
+        validated.model_dump(exclude_none=True),
+    )
+    return selected_preset, filtered_hyperparameters
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -313,12 +487,14 @@ async def create_run(request: RunCreateRequest) -> RunResponse:
     """
     # Validate environment and algorithm
     _validate_env_algorithm(request.env_id, request.algorithm)
+    selected_preset, resolved_hyperparameters = _resolve_hyperparameters(request)
     
     # Build config
     config = {
         "env_id": request.env_id,
         "algorithm": request.algorithm,
-        "hyperparameters": request.hyperparameters.model_dump(exclude_none=True),
+        "preset": selected_preset,
+        "hyperparameters": resolved_hyperparameters,
         "seed": request.seed,
     }
     
@@ -343,6 +519,33 @@ async def create_run(request: RunCreateRequest) -> RunResponse:
     )
     
     return _build_run_response(run_dict)
+
+
+@router.get("/presets", response_model=PresetsResponse)
+async def list_presets(
+    algorithm: Optional[str] = Query(
+        None,
+        pattern="^(PPO|DQN)$",
+        description="Optional algorithm filter",
+    ),
+) -> PresetsResponse:
+    """
+    List available preset tables and validation bounds.
+    """
+    selected_algorithms = [algorithm] if algorithm else sorted(PRESET_TABLES.keys())
+
+    return PresetsResponse(
+        algorithms=[
+            AlgorithmPresetResponse(
+                algorithm=algo,
+                default_preset=ALGORITHM_DEFAULT_PRESET[algo],
+                allowed_hyperparameters=ALGORITHM_HYPERPARAMETER_FIELDS[algo],
+                bounds=get_bounds_for_algorithm(algo),
+                presets=PRESET_TABLES[algo],
+            )
+            for algo in selected_algorithms
+        ]
+    )
 
 
 @router.get("", response_model=RunsListResponse)
@@ -617,6 +820,7 @@ async def get_run_config(run_id: str) -> RunConfigResponse:
     return RunConfigResponse(
         env_id=config.get("env_id", run_dict["env_id"]),
         algorithm=config.get("algorithm", run_dict["algorithm"]),
+        preset=config.get("preset"),
         hyperparameters=config.get("hyperparameters", {}),
         seed=config.get("seed"),
     )
