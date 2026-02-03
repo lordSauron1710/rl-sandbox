@@ -7,6 +7,7 @@ Lightweight RL training + evaluation visualizer built with FastAPI (backend) and
 ## What this project does
 
 - Trains RL agents with PPO and DQN (SB3).
+- Applies training presets (`fast`, `stable`, `high_score`) with server-side bounds validation.
 - Streams live metrics over SSE and live environment frames over WebSocket.
 - Records evaluation runs and serves MP4 artifacts.
 - Provides a responsive 3-column dashboard for environment setup, live feed, and logs.
@@ -102,6 +103,7 @@ Base API: `http://localhost:8000/api/v1`
 |---|---|---|
 | `/environments` | GET | List available environments |
 | `/environments/{id}/preview` | GET | Get idle preview frame (JPEG) |
+| `/runs/presets` | GET | List preset tables + hyperparameter bounds |
 | `/runs` | POST | Create run |
 | `/runs/{id}/start` | POST | Start training |
 | `/runs/{id}/stop` | POST | Stop training |

@@ -29,15 +29,53 @@ export interface ApiEnvironment {
   supported_algorithms: string[]
 }
 
+export type AlgorithmName = 'PPO' | 'DQN'
+export type PresetName = 'fast' | 'stable' | 'high_score'
+
+export interface HyperparameterBounds {
+  min: number
+  max: number
+}
+
+export interface PresetDefinition {
+  label: string
+  description: string
+  hyperparameters: {
+    learning_rate: number
+    total_timesteps: number
+    batch_size?: number
+    n_steps?: number
+    gamma?: number
+    buffer_size?: number
+    exploration_fraction?: number
+    exploration_final_eps?: number
+  }
+}
+
+export interface AlgorithmPresetTable {
+  algorithm: AlgorithmName
+  default_preset: PresetName
+  allowed_hyperparameters: string[]
+  bounds: Record<string, HyperparameterBounds>
+  presets: Record<PresetName, PresetDefinition>
+}
+
 /**
  * Run configuration
  */
 export interface RunConfig {
   env_id: string
-  algorithm: string
+  algorithm: AlgorithmName
+  preset?: PresetName
   hyperparameters: {
     learning_rate: number
     total_timesteps: number
+    batch_size?: number
+    n_steps?: number
+    gamma?: number
+    buffer_size?: number
+    exploration_fraction?: number
+    exploration_final_eps?: number
   }
   seed?: number
 }
@@ -48,7 +86,7 @@ export interface RunConfig {
 export interface ApiRun {
   id: string
   env_id: string
-  algorithm: string
+  algorithm: AlgorithmName
   status: 'pending' | 'training' | 'completed' | 'stopped' | 'failed' | 'evaluating'
   config: RunConfig
   progress?: {
@@ -109,6 +147,25 @@ export async function fetchEnvironments(): Promise<ApiEnvironment[]> {
   }
   const data = await response.json()
   return data.environments
+}
+
+/**
+ * Fetch preset tables and hyperparameter bounds for runs
+ */
+export async function fetchRunPresets(
+  algorithm?: AlgorithmName
+): Promise<AlgorithmPresetTable[]> {
+  const query = algorithm ? `?algorithm=${algorithm}` : ''
+  const response = await fetch(`${API_BASE_URL}/runs/presets${query}`, {
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(response, `Failed to fetch presets: ${response.statusText}`)
+    )
+  }
+  const data = await response.json()
+  return data.algorithms
 }
 
 /**

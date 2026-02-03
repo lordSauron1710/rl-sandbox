@@ -350,6 +350,129 @@ for ENV in $ENVS; do
 done
 echo ""
 
+echo "=== 8. PRESET MAPPING + BOUNDS VALIDATION ==="
+echo ""
+
+info "List preset tables"
+PRESETS_RESPONSE=$(curl -s --max-time 5 "$API_BASE/runs/presets")
+PRESETS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/presets")
+HAS_PPO_PRESETS=$(echo "$PRESETS_RESPONSE" | jq -r '[.algorithms[]? | select(.algorithm=="PPO")] | length')
+HAS_DQN_PRESETS=$(echo "$PRESETS_RESPONSE" | jq -r '[.algorithms[]? | select(.algorithm=="DQN")] | length')
+if [ "$PRESETS_HTTP" = "200" ] && [ "$HAS_PPO_PRESETS" -ge 1 ] && [ "$HAS_DQN_PRESETS" -ge 1 ]; then
+  pass "Preset tables endpoint"
+else
+  fail "Preset tables endpoint"
+  echo "   Response: $PRESETS_RESPONSE"
+fi
+
+info "Create run with DQN fast preset + override"
+PRESET_RUN_RESPONSE=$(curl -s -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "DQN",
+    "preset": "fast",
+    "hyperparameters": {
+      "total_timesteps": 250000
+    }
+  }')
+PRESET_RUN_ID=$(json_get "$PRESET_RUN_RESPONSE" '.id // empty')
+PRESET_NAME=$(json_get "$PRESET_RUN_RESPONSE" '.config.preset // empty')
+PRESET_STEPS=$(json_get "$PRESET_RUN_RESPONSE" '.config.hyperparameters.total_timesteps // 0')
+if [ -n "$PRESET_RUN_ID" ] && [ "$PRESET_RUN_ID" != "null" ] && [ "$PRESET_NAME" = "fast" ] && [ "$PRESET_STEPS" = "250000" ]; then
+  pass "Preset applied with explicit override"
+else
+  fail "Preset applied with explicit override"
+  echo "   Response: $PRESET_RUN_RESPONSE"
+fi
+
+if [ -n "$PRESET_RUN_ID" ] && [ "$PRESET_RUN_ID" != "null" ]; then
+  info "Run config artifact includes preset"
+  PRESET_CONFIG_RESPONSE=$(curl -s --max-time 5 "$API_BASE/runs/$PRESET_RUN_ID/artifacts/config")
+  PRESET_CONFIG_NAME=$(json_get "$PRESET_CONFIG_RESPONSE" '.preset // empty')
+  if [ "$PRESET_CONFIG_NAME" = "fast" ]; then
+    pass "Config artifact returns preset"
+  else
+    fail "Config artifact returns preset"
+    echo "   Response: $PRESET_CONFIG_RESPONSE"
+  fi
+fi
+
+info "Reject timesteps below configured minimum bound"
+LOW_STEPS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "PPO",
+    "hyperparameters": {"total_timesteps": 1000}
+  }')
+if [ "$LOW_STEPS_HTTP" = "422" ]; then
+  pass "Timesteps lower bound validation"
+else
+  fail "Timesteps lower bound validation expected 422, got $LOW_STEPS_HTTP"
+fi
+
+info "Reject invalid PPO batch_size > n_steps"
+PPO_RELATION_RESPONSE=$(curl -s -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "PPO",
+    "hyperparameters": {"batch_size": 512, "n_steps": 256}
+  }')
+PPO_RELATION_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "PPO",
+    "hyperparameters": {"batch_size": 512, "n_steps": 256}
+  }')
+PPO_RELATION_CODE=$(echo "$PPO_RELATION_RESPONSE" | jq -r '.detail.error.code // empty' 2>/dev/null || true)
+if [ "$PPO_RELATION_HTTP" = "422" ] && [ "$PPO_RELATION_CODE" = "invalid_hyperparameters" ]; then
+  pass "PPO relationship validation"
+else
+  fail "PPO relationship validation"
+  echo "   Response: $PPO_RELATION_RESPONSE"
+fi
+
+info "Reject invalid DQN buffer_size < batch_size"
+DQN_RELATION_RESPONSE=$(curl -s -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "DQN",
+    "hyperparameters": {"batch_size": 1024, "buffer_size": 512}
+  }')
+DQN_RELATION_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "DQN",
+    "hyperparameters": {"batch_size": 1024, "buffer_size": 512}
+  }')
+DQN_RELATION_CODE=$(echo "$DQN_RELATION_RESPONSE" | jq -r '.detail.error.code // empty' 2>/dev/null || true)
+if [ "$DQN_RELATION_HTTP" = "422" ] && [ "$DQN_RELATION_CODE" = "invalid_hyperparameters" ]; then
+  pass "DQN relationship validation"
+else
+  fail "DQN relationship validation"
+  echo "   Response: $DQN_RELATION_RESPONSE"
+fi
+
+info "Reject unknown hyperparameter key"
+UNKNOWN_PARAM_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "PPO",
+    "hyperparameters": {"unknown_key": 1}
+  }')
+if [ "$UNKNOWN_PARAM_HTTP" = "422" ]; then
+  pass "Unknown hyperparameter rejected"
+else
+  fail "Unknown hyperparameter expected 422, got $UNKNOWN_PARAM_HTTP"
+fi
+echo ""
+
 echo "================================"
 echo "TEST SUMMARY"
 echo "================================"

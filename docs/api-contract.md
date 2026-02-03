@@ -90,6 +90,7 @@ POST /runs
 {
   "env_id": "LunarLander-v2",
   "algorithm": "PPO",
+  "preset": "stable",
   "hyperparameters": {
     "learning_rate": 0.0003,
     "total_timesteps": 1000000
@@ -102,10 +103,13 @@ POST /runs
 |-------|------|----------|-------------|
 | `env_id` | string | Yes | Environment identifier |
 | `algorithm` | string | Yes | "PPO" or "DQN" |
-| `hyperparameters` | object | Yes | Training hyperparameters |
-| `hyperparameters.learning_rate` | float | Yes | Learning rate (default: 0.0003) |
-| `hyperparameters.total_timesteps` | int | Yes | Total training steps |
+| `preset` | string | No | `fast`, `stable`, or `high_score` (algorithm-specific defaults) |
+| `hyperparameters` | object | No | Explicit overrides on top of preset/default values |
+| `hyperparameters.learning_rate` | float | No | Learning rate (bounded server-side) |
+| `hyperparameters.total_timesteps` | int | No | Total training steps (bounded server-side) |
 | `seed` | int | No | Random seed (default: null for random) |
+
+Preset/default values are merged with any explicit overrides and validated server-side before run creation.
 
 **Response:** `201 Created`
 
@@ -118,6 +122,7 @@ POST /runs
   "config": {
     "env_id": "LunarLander-v2",
     "algorithm": "PPO",
+    "preset": "stable",
     "hyperparameters": {
       "learning_rate": 0.0003,
       "total_timesteps": 1000000
@@ -133,7 +138,51 @@ POST /runs
 
 **Errors:**
 - `400 Bad Request` — Invalid env_id, algorithm, or algorithm not supported for environment
-- `422 Unprocessable Entity` — Validation error in hyperparameters
+- `422 Unprocessable Entity` — Validation error in hyperparameters (bounds or invalid combinations)
+
+---
+
+### List Presets
+
+Returns preset tables and hyperparameter bounds for each algorithm.
+
+```
+GET /runs/presets
+```
+
+Optional filter:
+
+```
+GET /runs/presets?algorithm=PPO
+```
+
+**Response:** `200 OK`
+
+```json
+{
+  "algorithms": [
+    {
+      "algorithm": "PPO",
+      "default_preset": "stable",
+      "allowed_hyperparameters": ["learning_rate", "total_timesteps", "batch_size", "n_steps", "gamma"],
+      "bounds": {
+        "learning_rate": { "min": 0.000001, "max": 1.0 },
+        "total_timesteps": { "min": 5000, "max": 5000000 }
+      },
+      "presets": {
+        "fast": {
+          "label": "Fast",
+          "description": "Shorter training budget for quick iteration loops.",
+          "hyperparameters": {
+            "learning_rate": 0.0004,
+            "total_timesteps": 200000
+          }
+        }
+      }
+    }
+  ]
+}
+```
 
 ---
 
@@ -195,6 +244,7 @@ GET /runs/{run_id}
   "config": {
     "env_id": "LunarLander-v2",
     "algorithm": "PPO",
+    "preset": "stable",
     "hyperparameters": {
       "learning_rate": 0.0003,
       "total_timesteps": 1000000
