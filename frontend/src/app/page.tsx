@@ -62,12 +62,11 @@ export default function Home() {
     currentRun,
     isCreating,
     isStarting,
-    isStopping,
     isEvaluating,
-    error: trainingError,
     createAndStartTraining,
     stop,
     evaluate,
+    clearCurrentRun,
     clearError,
   } = useTraining()
 
@@ -127,6 +126,10 @@ export default function Home() {
   const isTraining = currentRun?.status === 'training' || isCreating || isStarting
   const isTesting = currentRun?.status === 'evaluating' || isEvaluating
   const isActive = isTraining || isTesting
+  const hasTrainedRun =
+    currentRun !== null &&
+    currentRun.status !== 'pending' &&
+    currentRun.status !== 'failed'
 
   // Update metrics from stream
   useEffect(() => {
@@ -149,26 +152,46 @@ export default function Home() {
   // subscriber before training starts. This ensures the live feed shows frames from the
   // first step for all environments and training states.
   useEffect(() => {
-    const shouldConnect =
-      currentRun?.id &&
-      (currentRun.status === 'pending' ||
-        currentRun.status === 'training' ||
-        currentRun.status === 'evaluating' ||
-        isStarting)
-
-    if (shouldConnect) {
-      connectMetrics(currentRun!.id)
-      connectFrames(currentRun!.id, 15)
-    } else {
+    if (!currentRun?.id) {
       disconnectMetrics()
       disconnectFrames()
+      return
     }
 
+    const shouldConnect =
+      currentRun.status === 'pending' ||
+      currentRun.status === 'training' ||
+      currentRun.status === 'evaluating' ||
+      isStarting
+
+    if (shouldConnect) {
+      connectMetrics(currentRun.id)
+      void connectFrames(currentRun.id, 15).catch(() => {
+        // Stream connection is best-effort. Training/eval should still run.
+        clearFramesError()
+      })
+      return
+    }
+
+    disconnectMetrics()
+    disconnectFrames()
+  }, [
+    currentRun?.id,
+    currentRun?.status,
+    isStarting,
+    connectMetrics,
+    disconnectMetrics,
+    connectFrames,
+    disconnectFrames,
+    clearFramesError,
+  ])
+
+  useEffect(() => {
     return () => {
       disconnectMetrics()
       disconnectFrames()
     }
-  }, [currentRun?.id, currentRun?.status, isStarting, connectMetrics, disconnectMetrics, connectFrames, disconnectFrames])
+  }, [disconnectMetrics, disconnectFrames])
 
   // Computed values from stream or local state
   const episode = streamedMetrics?.episode ?? 0
@@ -195,6 +218,12 @@ export default function Home() {
     addEvent(`Starting training [${algorithm}]...`, 'info')
     
     try {
+      const parsedLearningRate = Number.parseFloat(learningRate)
+      const safeLearningRate =
+        Number.isFinite(parsedLearningRate) && parsedLearningRate > 0
+          ? parsedLearningRate
+          : 0.0003
+
       // Connect to frames/metrics as soon as we have a run (before startTraining) so the
       // backend has a subscriber from the first step and the live feed shows the environment.
       await createAndStartTraining(
@@ -202,7 +231,7 @@ export default function Home() {
           env_id: selectedEnvId,
           algorithm,
           hyperparameters: {
-            learning_rate: parseFloat(learningRate),
+            learning_rate: safeLearningRate,
             total_timesteps: parseTimesteps(totalTimesteps),
           },
         },
@@ -245,7 +274,16 @@ export default function Home() {
     try {
       // Connect frames before evaluation so the live feed shows the environment during test
       connectMetrics(currentRun.id)
-      connectFrames(currentRun.id, 15)
+      try {
+        await Promise.race([
+          connectFrames(currentRun.id, 15),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error('Connection timeout')), 8000)
+          ),
+        ])
+      } catch {
+        clearFramesError()
+      }
       await evaluate(10)
       addEvent('Evaluation started', 'success')
     } catch (err) {
@@ -284,6 +322,7 @@ export default function Home() {
     })
     setIsRecording(false)
     setCurrentInsight(null)
+    clearCurrentRun()
     addEvent('Session reset', 'info')
   }
 
@@ -292,13 +331,6 @@ export default function Home() {
     // TODO: Generate and download report
     console.log('Generating report...')
   }
-
-  // Show error notification
-  useEffect(() => {
-    if (trainingError) {
-      addEvent(`Error: ${trainingError.message}`, 'error')
-    }
-  }, [trainingError])
 
   return (
     <>
@@ -342,7 +374,7 @@ export default function Home() {
           isTraining={isTraining}
           isTesting={isTesting}
           isCreatingRun={isCreating}
-          hasTrainedRun={!!currentRun}
+          hasTrainedRun={hasTrainedRun}
         />
 
         {/* Center Panel */}

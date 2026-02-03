@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import List
 
 import gymnasium as gym
+import numpy as np
 from PIL import Image
 
 from app.models.environment import (
@@ -66,6 +67,7 @@ async def get_environment_preview(env_id: str) -> Response:
             detail=error_detail
         )
 
+    env = None
     try:
         # Create the environment with rgb_array render mode
         env = gym.make(env_id, render_mode="rgb_array")
@@ -73,9 +75,14 @@ async def get_environment_preview(env_id: str) -> Response:
         # Reset to get initial state and render
         env.reset()
         frame = env.render()
+        if frame is None:
+            raise RuntimeError("Environment returned an empty preview frame.")
 
-        # Close the environment
-        env.close()
+        # Normalize render dtype across environments.
+        if frame.dtype == np.floating:
+            frame = (np.clip(frame, 0, 1) * 255).astype(np.uint8)
+        elif frame.dtype != np.uint8:
+            frame = np.asarray(frame, dtype=np.uint8)
 
         # Convert numpy array to PIL Image
         image = Image.fromarray(frame)
@@ -104,3 +111,6 @@ async def get_environment_preview(env_id: str) -> Response:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail
         )
+    finally:
+        if env is not None:
+            env.close()

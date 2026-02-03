@@ -464,6 +464,10 @@ class TrainingManager:
                 )
 
                 # Create and run evaluator
+                def on_episode_complete(current_episode: int, total_episodes: int):
+                    job.current_episode = current_episode
+                    job.total_episodes = total_episodes
+
                 runner = EvaluationRunner(
                     run_id=run_id,
                     env_id=config.get("env_id"),
@@ -471,6 +475,7 @@ class TrainingManager:
                     num_episodes=num_episodes,
                     seed=config.get("seed"),
                     stop_flag=stop_event.is_set,
+                    on_episode_complete=on_episode_complete,
                     stream_frames=stream_frames,
                     target_fps=target_fps,
                     verbose=1,

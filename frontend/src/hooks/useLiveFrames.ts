@@ -79,6 +79,7 @@ export function useLiveFrames(): UseLiveFramesResult {
     setFrame(null)
 
     return new Promise((resolve, reject) => {
+      let settled = false
       try {
         const url = getFramesWebSocketUrl(runId, fps)
         const ws = new WebSocket(url)
@@ -86,6 +87,7 @@ export function useLiveFrames(): UseLiveFramesResult {
         runIdRef.current = runId
 
         ws.onopen = () => {
+          settled = true
           setIsConnected(true)
           setError(null)
           resolve()
@@ -117,13 +119,21 @@ export function useLiveFrames(): UseLiveFramesResult {
         }
 
         ws.onerror = () => {
-          setError(new Error('WebSocket connection error'))
-          reject(new Error('WebSocket connection error'))
+          const socketError = new Error('WebSocket connection error')
+          setError(socketError)
+          if (!settled) {
+            settled = true
+            reject(socketError)
+          }
         }
 
         ws.onclose = (event) => {
           runIdRef.current = null
           setIsConnected(false)
+          if (!settled) {
+            settled = true
+            reject(new Error(event.reason || 'WebSocket closed before open'))
+          }
           if (event.code !== 1000 && event.code !== 1001) {
             setError(new Error(`Connection closed: ${event.reason || 'Unknown reason'}`))
           }
@@ -131,6 +141,7 @@ export function useLiveFrames(): UseLiveFramesResult {
       } catch (e) {
         setError(e instanceof Error ? e : new Error('Failed to connect'))
         setIsConnected(false)
+        settled = true
         reject(e instanceof Error ? e : new Error('Failed to connect'))
       }
     })

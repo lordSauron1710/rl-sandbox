@@ -4,11 +4,12 @@ Run storage utilities for managing run artifacts on disk.
 import json
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
 # Base directory for all runs
-RUNS_DIR = Path(__file__).parent.parent.parent / "runs"
+_DEFAULT_RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
+RUNS_DIR = Path(os.getenv("RLV_RUNS_DIR", str(_DEFAULT_RUNS_DIR))).expanduser()
 
 # Maximum number of evaluation videos to keep per run
 MAX_EVAL_VIDEOS = 3
@@ -88,7 +89,7 @@ class RunStorage:
         Save evaluation summary to eval directory.
         Returns the filename.
         """
-        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H-%M-%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
         filename = f"eval_{timestamp}.json"
         filepath = self.eval_dir / filename
         
@@ -100,7 +101,7 @@ class RunStorage:
     
     def get_eval_video_path(self) -> Path:
         """Get path for a new evaluation video."""
-        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H-%M-%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
         return self.eval_dir / f"eval_{timestamp}.mp4"
     
     def get_latest_eval(self) -> Optional[Dict[str, Any]]:
@@ -121,12 +122,12 @@ class RunStorage:
         # Cleanup videos
         video_files = sorted(self.eval_dir.glob("eval_*.mp4"), reverse=True)
         for old_video in video_files[MAX_EVAL_VIDEOS:]:
-            old_video.unlink()
-        
+            old_video.unlink(missing_ok=True)
+
         # Cleanup summaries
         json_files = sorted(self.eval_dir.glob("eval_*.json"), reverse=True)
         for old_json in json_files[MAX_EVAL_VIDEOS:]:
-            old_json.unlink()
+            old_json.unlink(missing_ok=True)
     
     # --- Model Checkpoints ---
     

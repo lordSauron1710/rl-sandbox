@@ -23,7 +23,7 @@ export function RightSidebar(props: RightSidebarProps) {
   const { insight, events, onGenerateReport } = props
 
   const sortedEvents = [...events].sort(
-    (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
+    (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)
   )
 
   return (

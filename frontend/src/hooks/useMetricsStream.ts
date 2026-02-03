@@ -23,13 +23,14 @@ export function useMetricsStream(): UseMetricsStreamResult {
   const [error, setError] = useState<Error | null>(null)
   
   const eventSourceRef = useRef<EventSource | null>(null)
-  const lastEventIdRef = useRef<number | null>(null)
+  const runIdRef = useRef<string | null>(null)
 
   const disconnect = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
       eventSourceRef.current = null
     }
+    runIdRef.current = null
     setIsConnected(false)
   }, [])
 
@@ -39,15 +40,26 @@ export function useMetricsStream(): UseMetricsStreamResult {
   }, [])
 
   const connect = useCallback((runId: string) => {
-    // Close any existing connection
+    // Already connected for this run.
+    if (
+      runIdRef.current === runId &&
+      eventSourceRef.current?.readyState === EventSource.OPEN
+    ) {
+      return
+    }
+
+    // Close any existing connection.
     disconnect()
     
     setError(null)
+    setMetrics(null)
+    setRewardHistory([])
     
     try {
       const url = getMetricsStreamUrl(runId)
       const eventSource = new EventSource(url)
       eventSourceRef.current = eventSource
+      runIdRef.current = runId
       
       eventSource.onopen = () => {
         setIsConnected(true)
@@ -57,8 +69,6 @@ export function useMetricsStream(): UseMetricsStreamResult {
       eventSource.addEventListener('metrics', (event) => {
         try {
           const data: MetricsData = JSON.parse(event.data)
-          lastEventIdRef.current = data.episode
-          
           setMetrics(data)
           
           // Add to reward history (keep last 100)
@@ -96,15 +106,13 @@ export function useMetricsStream(): UseMetricsStreamResult {
           const data = JSON.parse((event as MessageEvent).data)
           setError(new Error(data.message || 'Stream error'))
         } catch {
-          // Generic error
-          setError(new Error('Connection error'))
+          // Ignore: native EventSource onerror can fire with no payload.
         }
       })
       
       eventSource.onerror = () => {
-        if (eventSource.readyState === EventSource.CLOSED) {
+        if (eventSource.readyState !== EventSource.OPEN) {
           setIsConnected(false)
-          // Attempt reconnection could be added here
         }
       }
       

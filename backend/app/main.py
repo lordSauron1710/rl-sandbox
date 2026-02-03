@@ -1,6 +1,7 @@
 """
 RL Gym Visualizer - FastAPI Backend
 """
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -10,6 +11,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.database import init_db
 from app.routers import environments_router, runs_router
 from app.streaming import streaming_router
+from app.training import get_training_manager
+
+
+def _get_cors_origins() -> list[str]:
+    """Read CORS origins from env, with safe local defaults."""
+    raw = os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    )
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 @asynccontextmanager
@@ -17,7 +28,11 @@ async def lifespan(app: FastAPI):
     """Initialize resources on startup."""
     # Initialize database
     init_db()
-    yield
+    try:
+        yield
+    finally:
+        # Stop any background workers on shutdown.
+        get_training_manager().cleanup()
 
 
 app = FastAPI(
@@ -30,7 +45,7 @@ app = FastAPI(
 # CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

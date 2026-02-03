@@ -129,3 +129,29 @@ See `docs/assets/frontend-design-reference.png` for the target UI design.
 - No authentication for v0
 - Environment variables for all configuration (API URLs, etc.)
 - Graceful degradation when backend is unavailable
+
+## README Standard (apply from now on)
+
+When updating `README.md`, keep this structure and style:
+
+1. Title + one-line product summary
+2. Screenshot (if available)
+3. What it does (concise bullets)
+4. Architecture (short diagram or text)
+5. Supported environments/features table
+6. Repository layout (trimmed tree)
+7. Prerequisites
+8. Quick start (install, run, access URLs)
+9. Test commands (smoke + comprehensive)
+10. Key API routes table
+11. Environment variables
+12. Documentation map
+13. Roadmap status
+14. License
+
+Style rules:
+- Prefer concise, operational language over long prose
+- Use consistent heading hierarchy and table formatting
+- Keep commands copy-paste ready
+- Keep docs links workspace-relative
+- Update README whenever API/commands/env vars change
