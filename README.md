@@ -2,7 +2,7 @@
 
 Lightweight RL training + evaluation visualizer built with FastAPI (backend) and Next.js (frontend).
 
-![Frontend Screenshot](docs/assets/frontend-screenshot.png)
+![Latest UI Sample](docs/assets/frontend-design-reference.png)
 
 ## What this project does
 
