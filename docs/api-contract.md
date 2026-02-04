@@ -107,9 +107,13 @@ POST /runs
 | `hyperparameters` | object | No | Explicit overrides on top of preset/default values |
 | `hyperparameters.learning_rate` | float | No | Learning rate (bounded server-side) |
 | `hyperparameters.total_timesteps` | int | No | Total training steps (bounded server-side) |
+| `hyperparameters.batch_size` | int | No | PPO/DQN batch size (bounded server-side) |
+| `hyperparameters.n_steps` | int | No | PPO rollout steps (bounded server-side) |
+| `hyperparameters.buffer_size` | int | No | DQN replay buffer size (bounded server-side) |
+| `hyperparameters.gamma` | float | No | Discount factor (bounded server-side) |
 | `seed` | int | No | Random seed (default: null for random) |
 
-Preset/default values are merged with any explicit overrides and validated server-side before run creation.
+Preset/default values are merged with any explicit overrides and validated server-side before run creation. Hyperparameter keys that are not allowed for the selected algorithm are rejected with `422` (for example, `buffer_size` on `PPO`).
 
 **Response:** `201 Created`
 
@@ -138,7 +142,7 @@ Preset/default values are merged with any explicit overrides and validated serve
 
 **Errors:**
 - `400 Bad Request` — Invalid env_id, algorithm, or algorithm not supported for environment
-- `422 Unprocessable Entity` — Validation error in hyperparameters (bounds or invalid combinations)
+- `422 Unprocessable Entity` — Validation error in hyperparameters (bounds, invalid combinations, or unsupported fields for selected algorithm)
 
 ---
 

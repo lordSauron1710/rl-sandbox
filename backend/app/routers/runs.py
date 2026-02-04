@@ -422,10 +422,34 @@ def _validate_hyperparameter_relationships(algorithm: str, hyperparameters: Hype
         )
 
 
+def _validate_algorithm_specific_overrides(algorithm: str, overrides: dict[str, Any]) -> None:
+    """Reject overrides that are not valid for the selected algorithm."""
+    allowed_fields = set(ALGORITHM_HYPERPARAMETER_FIELDS.get(algorithm, []))
+    invalid_fields = sorted(field for field in overrides if field not in allowed_fields)
+    if not invalid_fields:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={
+            "error": {
+                "code": "invalid_hyperparameters",
+                "message": "Unsupported hyperparameters for selected algorithm",
+                "details": {
+                    "algorithm": algorithm,
+                    "invalid_fields": invalid_fields,
+                    "allowed_fields": sorted(allowed_fields),
+                },
+            }
+        },
+    )
+
+
 def _resolve_hyperparameters(request: RunCreateRequest) -> tuple[str, dict]:
     """Resolve preset defaults + explicit overrides and validate final config."""
     selected_preset = request.preset.value if request.preset else ALGORITHM_DEFAULT_PRESET[request.algorithm]
     overrides = request.hyperparameters.model_dump(exclude_none=True, exclude_unset=True)
+    _validate_algorithm_specific_overrides(request.algorithm, overrides)
 
     try:
         merged = build_hyperparameters(

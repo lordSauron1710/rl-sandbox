@@ -133,11 +133,14 @@ For full schemas and examples, see `docs/api-contract.md`.
 - `docs/prompt-11-analysis-and-tests.md` — prompt-11 implementation review.
 - `docs/prompt-13-analysis-and-tests.md` — prompt-13 implementation review.
 - `docs/prompt-14-analysis-and-tests.md` — prompt-14 implementation review.
+- `docs/prompt-15-analysis-and-tests.md` — prompt-15 implementation review.
+- `docs/prompt-16-analysis-and-tests.md` — prompt-16 implementation review.
+- `docs/qa.md` — v0 acceptance checklist and manual QA flow.
 - `errors.md` — root causes and latest working fixes (read before flow changes).
 
 ## Roadmap status
 
-Prompts 01–14 in `roadmap.md` are executed. Prompts 15+ are planned follow-up work.
+Prompts 01–16 in `roadmap.md` are executed. Prompts 17+ are planned follow-up work.
 
 ## License
 

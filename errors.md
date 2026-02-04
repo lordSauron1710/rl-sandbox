@@ -156,7 +156,67 @@ Applied in `TrainingRunner._create_env` and `EvaluationRunner._create_env` so re
 
 ---
 
-## 4. Categorisation summary
+### 3.3 Report preview looked inconsistent when switching reports/formats
+
+**Symptom:** In the report workflow modal, selecting another report could show clipped content (left side missing) and inconsistent preview layout.
+
+**Root cause:** The shared `<pre>` preview container kept previous horizontal/vertical scroll offsets across report/format switches, so newly selected content rendered from an old scroll position.
+
+**Fix (latest, working):**
+1. Reset preview scroll offsets to top-left whenever selected report or format changes.
+2. Key the preview pane by `${reportId}-${format}` so React remounts view state cleanly on switches.
+3. Wrap text-format previews (`whitespace-pre-wrap break-words`) to avoid unnecessary horizontal scrolling for TXT reports.
+4. Render view/download controls from a shared `FORMAT_OPTIONS` map so tab/action UI stays structurally consistent.
+
+**Lesson:** Content viewers that reuse a scroll container should explicitly reset or remount on context switches; otherwise stale scroll state makes UI feel random.
+
+---
+
+### 3.4 Frontend crashed with `Cannot find module './575.js'` in Next dev
+
+**Symptom:** The app returned a red Next.js Server Error overlay with `Cannot find module './575.js'` from `.next/server/webpack-runtime.js`.
+
+**Root cause:** Stale/corrupted `.next` build artifacts left runtime chunk references out of sync with generated chunk locations.
+
+**Fix (latest, working):**
+1. Stop the running Next dev server.
+2. Remove frontend build cache: `rm -rf frontend/.next`.
+3. Restart dev server on the usual host/port (`npm run dev -- -H 127.0.0.1 -p 3000`).
+
+**Lesson:** When Next.js reports missing internal chunk modules, treat it as cache/runtime artifact drift first; clean `.next` and restart before deeper debugging.
+
+---
+
+## 4. Backend: config guardrails
+
+### 4.1 Algorithm-incompatible hyperparameters were silently ignored
+
+**Symptom:** `POST /runs` accepted hyperparameter keys that do not belong to the selected algorithm (for example, `buffer_size` with `PPO`) and created runs without warning.
+
+**Root cause:** Run creation validated values against a shared hyperparameter schema, then filtered disallowed keys before persistence. That removed incompatible fields instead of rejecting them.
+
+**Fix (latest, working):** Validate explicit request overrides against `ALGORITHM_HYPERPARAMETER_FIELDS` before merging presets. If any override key is not allowed for the selected algorithm, return `422 invalid_hyperparameters` with `invalid_fields` and `allowed_fields` in the response details.
+
+**Lesson:** For configuration APIs, reject incompatible fields explicitly; silent drops hide client mistakes and weaken guardrails.
+
+---
+
+### 4.2 Duplicate start requests can return different 409 error codes
+
+**Symptom:** Edge-case tests that call `POST /runs/{id}/start` repeatedly observed either `detail.error.code = conflict` or `detail.error.code = training_error`, causing brittle assertions.
+
+**Root cause:** There are two valid guard paths for the same logical failure:
+1. Router status gate rejects starts from non-startable states (`conflict`).
+2. Training manager rejects starts when a job is already active (`training_error`).
+Timing decides which one triggers first.
+
+**Fix (latest, working):** In edge/failure tests, assert `HTTP 409` as the primary invariant and accept either error code as “already started / cannot start now.”
+
+**Lesson:** With async state transitions and layered guards, equivalent failures may surface through different error codes; tests should key on the stable contract first.
+
+---
+
+## 5. Categorisation summary
 
 | Category              | Error / risk                                      | Type        | Where / when                          |
 |-----------------------|----------------------------------------------------|------------|----------------------------------------|
@@ -170,10 +230,14 @@ Applied in `TrainingRunner._create_env` and `EvaluationRunner._create_env` so re
 | Backend / rendering   | Pygame SDL/AppKit crash in worker thread (macOS)   | Runtime bug| Training/evaluation env creation for frame streaming |
 | Frontend / state      | Page calling setState for hook-owned state         | API misuse | handleTrain / useTraining               |
 | Frontend / state      | Hook swallowed async errors                         | Flow bug   | useTraining success/error propagation    |
+| Frontend / UI state   | Report preview reused stale scroll offsets          | UX bug     | report workflow preview pane             |
+| Frontend / tooling    | Missing Next chunk module (`./575.js`)              | Build cache drift | stale `.next` runtime artifacts |
+| Backend / validation  | Algorithm-incompatible hyperparameters accepted     | Schema bug | `POST /runs` override validation         |
+| Backend / API semantics | Duplicate start returns alternate 409 error codes | Race/contract nuance | router vs manager start guards |
 
 ---
 
-## 5. How to use this file
+## 6. How to use this file
 
 - **When you fix a bug:** Add a short entry under the right category (or add a category). Include: symptom, root cause, **Fix (latest, working)** with the method that actually works, and one-line lesson. If we tried multiple approaches, document only the one that works now.
 - **When you find a better or working fix for an existing error:** Replace that entry’s Fix section with the new method. Do not keep multiple attempts; one entry = one current, working fix. Keeps the file consistent and authoritative.
