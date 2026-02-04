@@ -443,7 +443,7 @@ Create an acceptance test checklist for v0.
 ---
 
 ### Prompt 17 — Packaging + one-command dev
-// NOT STARTED
+// EXECUTED
 
 Improve dev experience.
 

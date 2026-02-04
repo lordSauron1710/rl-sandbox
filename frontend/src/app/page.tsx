@@ -29,6 +29,7 @@ import {
   toAbsoluteApiUrl,
 } from '@/services/api'
 import { buildAnalysisInsight } from '@/services/insightsEngine'
+import { buildEli5Explanation } from '@/services/eli5Engine'
 import {
   buildGeneratedReport,
   downloadReportFile,
@@ -51,6 +52,23 @@ const algorithmExplanations: Record<string, AlgorithmInfo> = {
       "DQN learns the value of each action in each situation. It builds a mental map of 'if I'm here and do this, how good will things be?' Over time, it simply picks the action with the highest expected value.",
     keyIdea: 'Learn a Q-function that estimates future rewards for each action',
     bestFor: 'Discrete action spaces, game-like environments',
+  },
+}
+
+const algorithmExplanationsEli5: Record<string, AlgorithmInfo> = {
+  PPO: {
+    name: 'Careful learner (PPO)',
+    intuition:
+      'This brain learns by trying things, but only changes a little bit each time so it does not forget how to do the task.',
+    keyIdea: 'Take small safe learning steps',
+    bestFor: 'Tasks where smooth, steady learning helps',
+  },
+  DQN: {
+    name: 'Score-picker brain (DQN)',
+    intuition:
+      'This brain gives each action a score and picks the action with the best score.',
+    keyIdea: 'Pick actions with the highest learned score',
+    bestFor: 'Tasks with a small list of clear choices',
   },
 }
 
@@ -161,6 +179,7 @@ export default function Home() {
   const [playbackError, setPlaybackError] = useState<string | null>(null)
   const [generatedReports, setGeneratedReports] = useState<GeneratedReport[]>([])
   const [isReportWorkflowOpen, setIsReportWorkflowOpen] = useState(false)
+  const [isEli5Enabled, setIsEli5Enabled] = useState(false)
 
   const selectedEnvironment = useMemo(
     () => environments.find((environment) => environment.id === selectedEnvId) ?? null,
@@ -388,7 +407,9 @@ export default function Home() {
     currentRun.status !== 'pending' &&
     currentRun.status !== 'failed'
 
-  const trainingProgressPercent = clampPercent(currentRun?.progress?.percent_complete)
+  const trainingProgressPercent = clampPercent(
+    currentRun?.status === 'completed' ? 100 : currentRun?.progress?.percent_complete
+  )
   const testingProgressPercent = clampPercent(
     evaluationProgress?.percent_complete ?? (currentRun?.status === 'evaluating' ? 0 : undefined)
   )
@@ -527,6 +548,62 @@ export default function Home() {
       totalTimesteps,
     ]
   )
+
+  const eli5Insight = useMemo(() => {
+    if (!isEli5Enabled) return null
+    return buildEli5Explanation({
+      backendAvailable: !environmentsError,
+      selectedEnvName: selectedEnvironment?.name ?? null,
+      algorithm,
+      run: currentRun,
+      isCreating,
+      isStarting,
+      isStoppingTraining,
+      isStoppingEvaluation,
+      isStreamConnected: isFramesConnected,
+      trainingProgressPercent,
+      testingProgressPercent,
+      episode,
+      currentReward,
+      meanReward: metrics.meanReward,
+      rewardHistoryCount: rewardHistory.length,
+      hasPlayback: Boolean(evaluationPlaybackUrl),
+      playbackError,
+      eventsError: eventsError?.message ?? null,
+    })
+  }, [
+    isEli5Enabled,
+    environmentsError,
+    selectedEnvironment?.name,
+    algorithm,
+    currentRun,
+    isCreating,
+    isStarting,
+    isStoppingTraining,
+    isStoppingEvaluation,
+    isFramesConnected,
+    trainingProgressPercent,
+    testingProgressPercent,
+    episode,
+    currentReward,
+    metrics.meanReward,
+    rewardHistory.length,
+    evaluationPlaybackUrl,
+    playbackError,
+    eventsError,
+  ])
+
+  const handleEli5Toggle = useCallback(() => {
+    setIsEli5Enabled((prev) => {
+      const next = !prev
+      addLocalEvent(
+        next ? 'ELI5 explainer enabled' : 'ELI5 explainer hidden',
+        'info',
+        'eli5_toggled'
+      )
+      return next
+    })
+  }, [addLocalEvent])
 
   const handlePlaybackError = useCallback(() => {
     if (!playbackError) {
@@ -714,7 +791,7 @@ export default function Home() {
         },
         metrics,
         rewardHistory,
-        insight: currentInsight,
+        insight: isEli5Enabled && eli5Insight ? eli5Insight : currentInsight,
         latestEvaluationSummary,
         evaluationPlaybackUrl,
         playbackError,
@@ -852,14 +929,22 @@ export default function Home() {
           currentReward={currentReward}
           metrics={metrics}
           rewardHistory={rewardHistory}
-          algorithmInfo={algorithmExplanations[algorithm]}
+          algorithmInfo={
+            isEli5Enabled
+              ? algorithmExplanationsEli5[algorithm]
+              : algorithmExplanations[algorithm]
+          }
           onReset={handleReset}
+          onEli5Toggle={handleEli5Toggle}
+          isEli5Enabled={isEli5Enabled}
           onPlaybackError={handlePlaybackError}
         />
 
         {/* Right Sidebar */}
         <RightSidebar
           insight={currentInsight || undefined}
+          eli5Insight={eli5Insight}
+          isEli5Enabled={isEli5Enabled}
           events={events}
           onGenerateReport={handleGenerateReport}
           onOpenReports={handleOpenReports}

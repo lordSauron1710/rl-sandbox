@@ -46,7 +46,10 @@ rl-sandbox/
 │   ├── src/components/    # Dashboard UI
 │   ├── src/hooks/         # Runtime hooks (training/streaming)
 │   └── src/services/      # API client
-├── docs/                  # Contracts, data model, test notes
+├── scripts/
+│   └── dev.sh             # One-command local dev runner
+├── .env.example           # Shared backend/frontend local env template
+├── docs/assets/           # Reference and screenshot images
 ├── roadmap.md             # Prompt roadmap
 ├── errors.md              # Known issues + latest working fixes
 ├── test-smoke.sh
@@ -61,25 +64,40 @@ rl-sandbox/
 
 ## Quick start
 
-### 1) Install dependencies
+### 1) Configure local env vars (optional but recommended)
 
 ```bash
-make install
+cp .env.example .env
 ```
 
-### 2) Run the app
+Update `.env` if you need non-default ports, backend URL, or custom run-artifact location.
+
+### 2) Start backend + frontend with one command
 
 ```bash
 make dev
 ```
 
+`make dev` runs `scripts/dev.sh` and will:
+
+- Load `.env` / `.env.local` if present
+- Auto-create `backend/.venv` and install Python deps when needed
+- Auto-install frontend deps when lockfile changes
+- Start backend + frontend together and shut both down cleanly
+
+```bash
+make dev-check
+```
+
+Use `make dev-check` to validate env vars, dependency state, and paths without starting servers.
+
 Services:
 
-- Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:8000`
-- Backend docs: `http://localhost:8000/docs`
+- Frontend: `http://127.0.0.1:3000`
+- Backend API: `http://127.0.0.1:8000`
+- Backend docs: `http://127.0.0.1:8000/docs`
 
-## Run tests
+## Test commands
 
 Backend must be running first.
 
@@ -87,6 +105,11 @@ Backend must be running first.
 make test-smoke
 make test
 ```
+
+GitHub Actions automation:
+
+- `Frontend Build` + `Backend Smoke` run on every push (`main`, `codex/**`) and pull request.
+- `Backend Comprehensive` runs on push to `main`, nightly schedule, or manual workflow dispatch (with `run_comprehensive=true`).
 
 Manual invocation with explicit host (useful on some systems):
 
@@ -112,35 +135,45 @@ Base API: `http://localhost:8000/api/v1`
 | `/runs/{id}/ws/frames` | WS | Live frame stream |
 | `/runs/{id}/artifacts/*` | GET | Config/metrics/eval artifacts |
 
-For full schemas and examples, see `docs/api-contract.md`.
+Use FastAPI docs (`http://localhost:8000/docs`) for full request/response schemas.
 
 ## Environment variables
 
-### Backend
+`make dev` / `scripts/dev.sh` read env vars from shell and optional `.env` files.
 
-- `CORS_ORIGINS`: comma-separated allowed origins (default local origins).
-- `RLV_RUNS_DIR`: custom path for run artifacts (default `backend/runs`).
+| Variable | Scope | Default | Notes |
+|---|---|---|---|
+| `NEXT_PUBLIC_API_URL` | Frontend | `http://127.0.0.1:8000/api/v1` | Backend API base URL used by Next.js client code |
+| `RLV_RUNS_DIR` | Backend | `<repo>/backend/runs` | Path for run artifacts; relative values are resolved from repo root by `scripts/dev.sh` |
+| `CORS_ORIGINS` | Backend | Derived from frontend host/port | Comma-separated allowed origins |
+| `BACKEND_HOST` | Dev runner | `127.0.0.1` | Host for Uvicorn bind |
+| `BACKEND_PORT` | Dev runner | `8000` | Port for Uvicorn bind |
+| `FRONTEND_HOST` | Dev runner | `127.0.0.1` | Host for Next.js dev server |
+| `FRONTEND_PORT` | Dev runner | `3000` | Port for Next.js dev server |
 
-### Frontend
+Example custom run:
 
-- `NEXT_PUBLIC_API_URL`: backend API base (default `http://localhost:8000/api/v1`).
+```bash
+BACKEND_PORT=8010 FRONTEND_PORT=3010 NEXT_PUBLIC_API_URL=http://127.0.0.1:8010/api/v1 make dev
+```
+
+## Troubleshooting
+
+- `Backend port ... is already in use`: stop old process or run with `BACKEND_PORT=<new-port>`.
+- `Frontend port ... is already in use`: stop old process or run with `FRONTEND_PORT=<new-port>`.
+- Frontend calls wrong backend: set `NEXT_PUBLIC_API_URL` and restart `make dev`.
+- Artifacts not written where expected: set `RLV_RUNS_DIR`, then run `make dev-check`.
+- Validate setup without launching servers: `make dev-check`.
 
 ## Documentation map
 
-- `docs/api-contract.md` — API contract.
-- `docs/data-model.md` — storage and schema model.
-- `docs/testing-guide-prompt-11.md` — runtime behavior and UI testing notes.
-- `docs/prompt-11-analysis-and-tests.md` — prompt-11 implementation review.
-- `docs/prompt-13-analysis-and-tests.md` — prompt-13 implementation review.
-- `docs/prompt-14-analysis-and-tests.md` — prompt-14 implementation review.
-- `docs/prompt-15-analysis-and-tests.md` — prompt-15 implementation review.
-- `docs/prompt-16-analysis-and-tests.md` — prompt-16 implementation review.
-- `docs/qa.md` — v0 acceptance checklist and manual QA flow.
 - `errors.md` — root causes and latest working fixes (read before flow changes).
+- `docs/assets/frontend-design-reference.png` — target UI design reference.
+- `docs/assets/frontend-screenshot.png` — current app screenshot.
 
 ## Roadmap status
 
-Prompts 01–16 in `roadmap.md` are executed. Prompts 17+ are planned follow-up work.
+Prompts 01–17 in `roadmap.md` are executed. Prompts 18+ are planned follow-up work.
 
 ## License
 

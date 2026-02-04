@@ -5,6 +5,8 @@ import { EventLog, EventLogEntry } from './EventLog'
 
 interface RightSidebarProps {
   insight?: AnalysisInsight
+  eli5Insight?: AnalysisInsight | null
+  isEli5Enabled?: boolean
   events: EventLogEntry[]
   onGenerateReport: () => void
   onOpenReports: () => void
@@ -17,6 +19,8 @@ interface RightSidebarProps {
 export function RightSidebar(props: RightSidebarProps) {
   const {
     insight,
+    eli5Insight = null,
+    isEli5Enabled = false,
     events,
     onGenerateReport,
     onOpenReports,
@@ -34,6 +38,8 @@ export function RightSidebar(props: RightSidebarProps) {
 
       <AnalysisPanel
         insight={insight}
+        eli5Insight={eli5Insight}
+        isEli5Enabled={isEli5Enabled}
         onGenerateReport={onGenerateReport}
         onOpenReports={onOpenReports}
         onQuickDownload={onQuickDownload}

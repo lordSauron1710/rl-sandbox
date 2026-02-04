@@ -39,6 +39,8 @@ interface CenterPanelProps {
   
   // Controls
   onReset: () => void
+  onEli5Toggle: () => void
+  isEli5Enabled: boolean
   onPlaybackError?: () => void
 }
 
@@ -54,6 +56,8 @@ export function CenterPanel({
   rewardHistory,
   algorithmInfo,
   onReset,
+  onEli5Toggle,
+  isEli5Enabled,
   onPlaybackError,
 }: CenterPanelProps) {
   // Normalize reward history for bar display (0-100%)
@@ -73,6 +77,8 @@ export function CenterPanel({
         episode={episode}
         currentReward={currentReward}
         onReset={onReset}
+        onEli5Toggle={onEli5Toggle}
+        isEli5Enabled={isEli5Enabled}
         onPlaybackError={onPlaybackError}
       />
 
@@ -90,7 +96,9 @@ export function CenterPanel({
       {/* Algorithm Explainer */}
       {algorithmInfo && (
         <div className="p-4 bg-white flex-1 flex flex-col">
-          <span className="label">ALGORITHM INTUITION</span>
+          <span className="label">
+            {isEli5Enabled ? 'ALGORITHM INTUITION (ELI5 MODE)' : 'ALGORITHM INTUITION'}
+          </span>
           <div className="bg-surface-secondary rounded mt-2 flex-1 grid grid-cols-3 min-h-[80px]">
             <ExplainerCell title="Algorithm" content={algorithmInfo.name} />
             <ExplainerCell title="Key Idea" content={algorithmInfo.keyIdea} />

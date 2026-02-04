@@ -176,12 +176,13 @@ Applied in `TrainingRunner._create_env` and `EvaluationRunner._create_env` so re
 
 **Symptom:** The app returned a red Next.js Server Error overlay with `Cannot find module './575.js'` from `.next/server/webpack-runtime.js`.
 
-**Root cause:** Stale/corrupted `.next` build artifacts left runtime chunk references out of sync with generated chunk locations.
+**Root cause:** Stale/corrupted `.next` build artifacts left runtime chunk references out of sync with generated chunk locations. In recurrent incidents, this showed up with webpack cache rename `ENOENT` warnings under `.next/cache` and can be worsened if multiple Next dev processes were bound to port `3000`.
 
 **Fix (latest, working):**
-1. Stop the running Next dev server.
-2. Remove frontend build cache: `rm -rf frontend/.next`.
+1. Fully stop Next dev (kill all processes bound to port 3000).
+2. Remove frontend build cache only after stop: `rm -rf frontend/.next`.
 3. Restart dev server on the usual host/port (`npm run dev -- -H 127.0.0.1 -p 3000`).
+4. Verify recovery with `curl http://127.0.0.1:3000` (expect `200`) before reopening the app.
 
 **Lesson:** When Next.js reports missing internal chunk modules, treat it as cache/runtime artifact drift first; clean `.next` and restart before deeper debugging.
 
@@ -216,6 +217,25 @@ Timing decides which one triggers first.
 
 ---
 
+### 4.3 Completed runs reported partial or >100% progress
+
+**Symptom:** Training could finish (including reward-saturation early stop), but `GET /runs/{id}` sometimes returned `progress.percent_complete` below 100 or above 100, so the UI progress indicator looked wrong near/after completion.
+
+**Root cause:** Run progress mixed two sources:
+1. Live manager progress (can briefly lag run status updates and can overshoot `total_timesteps` due rollout chunking).
+2. Stored metrics progress (for early-stop completion, `current_timestep` can be less than configured `total_timesteps` by design).
+Without terminal-status normalization, completed runs did not consistently map to 100%.
+
+**Fix (latest, working):**
+1. In `_build_run_response`, use live manager progress only for active statuses (`pending`, `training`, `evaluating`).
+2. Clamp live and stored computed progress into `[0, 100]`.
+3. Force `percent_complete = 100.0` when run status is `completed` (covers normal completion + adaptive early stop).
+4. Add comprehensive test assertion that completed runs report 100% progress.
+
+**Lesson:** Progress bars should represent lifecycle semantics, not raw step ratios alone; terminal `completed` must normalize to 100%.
+
+---
+
 ## 5. Categorisation summary
 
 | Category              | Error / risk                                      | Type        | Where / when                          |
@@ -234,6 +254,7 @@ Timing decides which one triggers first.
 | Frontend / tooling    | Missing Next chunk module (`./575.js`)              | Build cache drift | stale `.next` runtime artifacts |
 | Backend / validation  | Algorithm-incompatible hyperparameters accepted     | Schema bug | `POST /runs` override validation         |
 | Backend / API semantics | Duplicate start returns alternate 409 error codes | Race/contract nuance | router vs manager start guards |
+| Backend / progress semantics | Completed runs reported partial or >100% progress | Logic bug | `GET /runs/{id}` progress composition (manager + storage) |
 
 ---
 

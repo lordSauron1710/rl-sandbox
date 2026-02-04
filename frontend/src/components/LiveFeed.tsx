@@ -22,6 +22,8 @@ interface LiveFeedProps {
   
   // Controls
   onReset: () => void
+  onEli5Toggle: () => void
+  isEli5Enabled: boolean
   onPlaybackError?: () => void
 }
 
@@ -34,6 +36,8 @@ export function LiveFeed({
   episode,
   currentReward,
   onReset,
+  onEli5Toggle,
+  isEli5Enabled,
   onPlaybackError,
 }: LiveFeedProps) {
   const [previewError, setPreviewError] = useState(false)
@@ -77,6 +81,15 @@ export function LiveFeed({
             )}
           </div>
           <div className="flex gap-2">
+            <button
+              className={`btn w-auto px-3 py-1 text-[10px] ${
+                isEli5Enabled ? 'btn-primary' : 'btn-secondary'
+              }`}
+              onClick={onEli5Toggle}
+              title="Toggle simple-language explanations across the app"
+            >
+              {isEli5Enabled ? 'ELI5 ON' : 'ELI5'}
+            </button>
             <button
               className="btn btn-secondary w-auto px-3 py-1 text-[10px]"
               onClick={onReset}
