@@ -46,7 +46,7 @@ rl-sandbox/
 │   ├── src/components/    # Dashboard UI
 │   ├── src/hooks/         # Runtime hooks (training/streaming)
 │   └── src/services/      # API client
-├── docs/                  # Contracts, data model, test notes
+├── docs/assets/           # Reference and screenshot images
 ├── roadmap.md             # Prompt roadmap
 ├── errors.md              # Known issues + latest working fixes
 ├── test-smoke.sh
@@ -117,7 +117,7 @@ Base API: `http://localhost:8000/api/v1`
 | `/runs/{id}/ws/frames` | WS | Live frame stream |
 | `/runs/{id}/artifacts/*` | GET | Config/metrics/eval artifacts |
 
-For full schemas and examples, see `docs/api-contract.md`.
+Use FastAPI docs (`http://localhost:8000/docs`) for full request/response schemas.
 
 ## Environment variables
 
@@ -132,16 +132,9 @@ For full schemas and examples, see `docs/api-contract.md`.
 
 ## Documentation map
 
-- `docs/api-contract.md` — API contract.
-- `docs/data-model.md` — storage and schema model.
-- `docs/testing-guide-prompt-11.md` — runtime behavior and UI testing notes.
-- `docs/prompt-11-analysis-and-tests.md` — prompt-11 implementation review.
-- `docs/prompt-13-analysis-and-tests.md` — prompt-13 implementation review.
-- `docs/prompt-14-analysis-and-tests.md` — prompt-14 implementation review.
-- `docs/prompt-15-analysis-and-tests.md` — prompt-15 implementation review.
-- `docs/prompt-16-analysis-and-tests.md` — prompt-16 implementation review.
-- `docs/qa.md` — v0 acceptance checklist and manual QA flow.
 - `errors.md` — root causes and latest working fixes (read before flow changes).
+- `docs/assets/frontend-design-reference.png` — target UI design reference.
+- `docs/assets/frontend-screenshot.png` — current app screenshot.
 
 ## Roadmap status
 

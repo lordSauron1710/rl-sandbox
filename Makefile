@@ -54,9 +54,13 @@ test:
 clean:
 	@echo "Cleaning up..."
 	rm -rf backend/.venv
+	rm -rf backend/venv
 	rm -rf backend/__pycache__
 	rm -rf backend/app/__pycache__
+	rm -rf backend/runs
+	rm -f backend/data/*.db
 	rm -rf frontend/node_modules
 	rm -rf frontend/.next
+	rm -f frontend/tsconfig.tsbuildinfo
 	rm -rf runs/
 	rm -f *.db
