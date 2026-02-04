@@ -426,7 +426,7 @@ Finalize preset configurations and safety bounds.
 ---
 
 ### Prompt 16 — QA checklist + acceptance tests
-// NOT STARTED
+// EXECUTED
 
 Create an acceptance test checklist for v0.
 

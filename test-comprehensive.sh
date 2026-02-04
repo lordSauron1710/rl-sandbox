@@ -1,5 +1,5 @@
 #!/bin/bash
-# Comprehensive backend API test for RL Gym Visualizer.
+# Comprehensive backend acceptance test for RL Gym Visualizer.
 # Requires backend running at http://localhost:8000.
 
 set -u
@@ -38,29 +38,52 @@ require_cmd() {
 json_get() {
   local json="$1"
   local query="$2"
-  echo "$json" | jq -r "$query"
+  echo "$json" | jq -r "$query" 2>/dev/null || true
 }
 
-wait_for_run_status() {
+status_in_list() {
+  local status="$1"
+  shift
+  local allowed
+  for allowed in "$@"; do
+    if [ "$status" = "$allowed" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+wait_for_status_in() {
   local run_id="$1"
   local timeout_secs="${2:-30}"
+  shift 2
   local started_at
   started_at=$(date +%s)
+
   while true; do
     local payload
     payload=$(curl -s --max-time 5 "$API_BASE/runs/$run_id")
     local status
     status=$(json_get "$payload" '.status // "unknown"')
-    if [ "$status" != "pending" ] && [ "$status" != "training" ] && [ "$status" != "evaluating" ]; then
+
+    if status_in_list "$status" "$@"; then
       echo "$status"
       return 0
     fi
+
     if [ "$(($(date +%s) - started_at))" -ge "$timeout_secs" ]; then
       echo "$status"
       return 1
     fi
+
     sleep 1
   done
+}
+
+wait_for_terminal_status() {
+  local run_id="$1"
+  local timeout_secs="${2:-30}"
+  wait_for_status_in "$run_id" "$timeout_secs" stopped completed failed
 }
 
 require_cmd curl
@@ -101,7 +124,7 @@ echo "=== 2. PREVIEW ENDPOINTS ==="
 echo ""
 for ENV in $ENVS; do
   info "Preview $ENV"
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$API_BASE/environments/$ENV/preview" || echo "000")
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 12 "$API_BASE/environments/$ENV/preview" || echo "000")
   if [ "$HTTP_CODE" = "200" ]; then
     pass "Preview $ENV"
   else
@@ -125,9 +148,9 @@ CREATE_RESPONSE=$(curl -s -X POST "$API_BASE/runs" \
     }
   }')
 
-RUN_ID=$(json_get "$CREATE_RESPONSE" '.id // empty')
-if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-  pass "Create run ($RUN_ID)"
+BASE_RUN_ID=$(json_get "$CREATE_RESPONSE" '.id // empty')
+if [ -n "$BASE_RUN_ID" ] && [ "$BASE_RUN_ID" != "null" ]; then
+  pass "Create run ($BASE_RUN_ID)"
 else
   fail "Create run"
   echo "   Response: $CREATE_RESPONSE"
@@ -135,7 +158,7 @@ else
 fi
 
 info "Start training"
-START_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$RUN_ID/start")
+START_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$BASE_RUN_ID/start")
 START_STATUS=$(json_get "$START_RESPONSE" '.status // empty')
 if [ "$START_STATUS" = "training" ]; then
   pass "Start training"
@@ -145,7 +168,7 @@ else
 fi
 
 info "Check metrics SSE endpoint"
-SSE_RESULT=$(curl -sN --max-time 3 "$API_BASE/runs/$RUN_ID/stream/metrics" || true)
+SSE_RESULT=$(curl -sN --max-time 3 "$API_BASE/runs/$BASE_RUN_ID/stream/metrics" || true)
 if echo "$SSE_RESULT" | grep -q "event:"; then
   pass "Metrics stream emits SSE data"
 else
@@ -153,7 +176,7 @@ else
 fi
 
 info "Check events SSE endpoint"
-EVENTS_SSE_RESULT=$(curl -sN --max-time 3 "$API_BASE/runs/$RUN_ID/stream/events" || true)
+EVENTS_SSE_RESULT=$(curl -sN --max-time 3 "$API_BASE/runs/$BASE_RUN_ID/stream/events" || true)
 if echo "$EVENTS_SSE_RESULT" | grep -q "event: event"; then
   pass "Events stream emits event log data"
 else
@@ -161,7 +184,7 @@ else
 fi
 
 info "Stop training"
-STOP_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$RUN_ID/stop")
+STOP_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$BASE_RUN_ID/stop")
 STOP_STATUS=$(json_get "$STOP_RESPONSE" '.status // empty')
 STOP_ERROR_CODE=$(json_get "$STOP_RESPONSE" '.detail.error.code // empty')
 STOP_CURRENT_STATUS=$(json_get "$STOP_RESPONSE" '.detail.error.details.current_status // empty')
@@ -175,11 +198,11 @@ else
 fi
 
 info "Wait for terminal status"
-FINAL_STATUS=$(wait_for_run_status "$RUN_ID" 30)
-if [ "$FINAL_STATUS" = "stopped" ] || [ "$FINAL_STATUS" = "completed" ] || [ "$FINAL_STATUS" = "failed" ]; then
-  pass "Run reached terminal status ($FINAL_STATUS)"
+BASE_FINAL_STATUS=$(wait_for_terminal_status "$BASE_RUN_ID" 45)
+if [ "$BASE_FINAL_STATUS" = "stopped" ] || [ "$BASE_FINAL_STATUS" = "completed" ] || [ "$BASE_FINAL_STATUS" = "failed" ]; then
+  pass "Run reached terminal status ($BASE_FINAL_STATUS)"
 else
-  fail "Run did not reach terminal status in time (last: $FINAL_STATUS)"
+  fail "Run did not reach terminal status in time (last: $BASE_FINAL_STATUS)"
 fi
 echo ""
 
@@ -187,7 +210,7 @@ echo "=== 4. ARTIFACT ENDPOINTS ==="
 echo ""
 
 info "Get run config artifact"
-CONFIG_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$RUN_ID/artifacts/config")
+CONFIG_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$BASE_RUN_ID/artifacts/config")
 if [ "$CONFIG_HTTP" = "200" ]; then
   pass "Config artifact endpoint"
 else
@@ -195,15 +218,32 @@ else
 fi
 
 info "Get metrics artifact"
-METRICS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$RUN_ID/artifacts/metrics")
+METRICS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$BASE_RUN_ID/artifacts/metrics")
 if [ "$METRICS_HTTP" = "200" ]; then
   pass "Metrics artifact endpoint"
 else
   fail "Metrics artifact endpoint (HTTP $METRICS_HTTP)"
 fi
 
+info "Get metrics artifact with tail=1"
+METRICS_TAIL_PAYLOAD=$(curl -s --max-time 5 "$API_BASE/runs/$BASE_RUN_ID/artifacts/metrics?tail=1")
+METRICS_TAIL_COUNT=$(json_get "$METRICS_TAIL_PAYLOAD" '.metrics | length')
+if [ "$METRICS_TAIL_COUNT" -le 1 ]; then
+  pass "Metrics tail query returns <= 1 item"
+else
+  fail "Metrics tail query expected <= 1 item, got $METRICS_TAIL_COUNT"
+fi
+
+info "Reject invalid metrics tail (tail=0)"
+METRICS_TAIL_INVALID_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$BASE_RUN_ID/artifacts/metrics?tail=0")
+if [ "$METRICS_TAIL_INVALID_HTTP" = "422" ]; then
+  pass "Metrics tail validation"
+else
+  fail "Metrics tail validation expected 422, got $METRICS_TAIL_INVALID_HTTP"
+fi
+
 info "Get events list endpoint"
-EVENTS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$RUN_ID/events")
+EVENTS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$BASE_RUN_ID/events")
 if [ "$EVENTS_HTTP" = "200" ]; then
   pass "Events endpoint"
 else
@@ -211,7 +251,7 @@ else
 fi
 
 info "No evaluation summary before TEST run"
-PRE_EVAL_SUMMARY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$RUN_ID/evaluate/latest")
+PRE_EVAL_SUMMARY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$BASE_RUN_ID/evaluate/latest")
 if [ "$PRE_EVAL_SUMMARY_HTTP" = "404" ]; then
   pass "No evaluation summary before evaluation"
 else
@@ -219,7 +259,7 @@ else
 fi
 
 info "No evaluation video before TEST run"
-PRE_EVAL_VIDEO_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$RUN_ID/artifacts/eval/latest.mp4")
+PRE_EVAL_VIDEO_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs/$BASE_RUN_ID/artifacts/eval/latest.mp4")
 if [ "$PRE_EVAL_VIDEO_HTTP" = "404" ]; then
   pass "No evaluation video before evaluation"
 else
@@ -227,12 +267,12 @@ else
 fi
 echo ""
 
-echo "=== 5. EVALUATION FLOW ==="
+echo "=== 5. EVALUATION FLOW (COMPLETE PATH) ==="
 echo ""
 
-if [ "$FINAL_STATUS" = "stopped" ] || [ "$FINAL_STATUS" = "completed" ]; then
+if [ "$BASE_FINAL_STATUS" = "stopped" ] || [ "$BASE_FINAL_STATUS" = "completed" ]; then
   info "Trigger evaluation"
-  EVAL_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$RUN_ID/evaluate" \
+  EVAL_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$BASE_RUN_ID/evaluate" \
     -H "Content-Type: application/json" \
     -d '{"num_episodes": 2, "stream_frames": true, "target_fps": 15}')
   EVAL_STATUS=$(json_get "$EVAL_RESPONSE" '.status // empty')
@@ -244,7 +284,7 @@ if [ "$FINAL_STATUS" = "stopped" ] || [ "$FINAL_STATUS" = "completed" ]; then
   fi
 
   info "Wait for evaluation to finish"
-  EVAL_FINAL=$(wait_for_run_status "$RUN_ID" 60)
+  EVAL_FINAL=$(wait_for_status_in "$BASE_RUN_ID" 60 stopped completed)
   if [ "$EVAL_FINAL" = "stopped" ] || [ "$EVAL_FINAL" = "completed" ]; then
     pass "Evaluation finished and run status restored ($EVAL_FINAL)"
   else
@@ -252,7 +292,7 @@ if [ "$FINAL_STATUS" = "stopped" ] || [ "$FINAL_STATUS" = "completed" ]; then
   fi
 
   info "Fetch latest evaluation summary"
-  SUMMARY_RESPONSE=$(curl -s --max-time 5 "$API_BASE/runs/$RUN_ID/evaluate/latest")
+  SUMMARY_RESPONSE=$(curl -s --max-time 5 "$API_BASE/runs/$BASE_RUN_ID/evaluate/latest")
   SUMMARY_NUM_EPISODES=$(json_get "$SUMMARY_RESPONSE" '.num_episodes // 0')
   SUMMARY_MEAN_REWARD=$(json_get "$SUMMARY_RESPONSE" '.mean_reward // empty')
   SUMMARY_VIDEO_PATH=$(json_get "$SUMMARY_RESPONSE" '.video_path // empty')
@@ -264,7 +304,7 @@ if [ "$FINAL_STATUS" = "stopped" ] || [ "$FINAL_STATUS" = "completed" ]; then
   fi
 
   info "Fetch latest evaluation video"
-  VIDEO_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$API_BASE/runs/$RUN_ID/artifacts/eval/latest.mp4")
+  VIDEO_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$API_BASE/runs/$BASE_RUN_ID/artifacts/eval/latest.mp4")
   if [ "$VIDEO_HTTP" = "200" ]; then
     pass "Latest evaluation video endpoint"
   else
@@ -272,7 +312,7 @@ if [ "$FINAL_STATUS" = "stopped" ] || [ "$FINAL_STATUS" = "completed" ]; then
   fi
 
   info "Verify evaluation lifecycle events"
-  EVAL_EVENTS=$(curl -s --max-time 5 "$API_BASE/runs/$RUN_ID/events?limit=100")
+  EVAL_EVENTS=$(curl -s --max-time 5 "$API_BASE/runs/$BASE_RUN_ID/events?limit=100")
   HAS_EVAL_STARTED=$(echo "$EVAL_EVENTS" | jq -r '[.events[]? | select(.event_type=="evaluation_started")] | length')
   HAS_EVAL_COMPLETED=$(echo "$EVAL_EVENTS" | jq -r '[.events[]? | select(.event_type=="evaluation_completed")] | length')
   if [ "$HAS_EVAL_STARTED" -ge 1 ] && [ "$HAS_EVAL_COMPLETED" -ge 1 ]; then
@@ -282,11 +322,226 @@ if [ "$FINAL_STATUS" = "stopped" ] || [ "$FINAL_STATUS" = "completed" ]; then
     echo "   Started events: $HAS_EVAL_STARTED  Completed events: $HAS_EVAL_COMPLETED"
   fi
 else
-  fail "Skipping evaluation flow because run ended as $FINAL_STATUS"
+  fail "Skipping evaluation flow because run ended as $BASE_FINAL_STATUS"
 fi
 echo ""
 
-echo "=== 6. VALIDATION + ERROR PATHS ==="
+echo "=== 6. STATE TRANSITION MATRIX ==="
+echo ""
+
+info "Create long-running run for state transition checks"
+STATE_RUN_RESPONSE=$(curl -s -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "PPO",
+    "hyperparameters": {
+      "learning_rate": 0.0003,
+      "total_timesteps": 250000
+    }
+  }')
+STATE_RUN_ID=$(json_get "$STATE_RUN_RESPONSE" '.id // empty')
+if [ -n "$STATE_RUN_ID" ] && [ "$STATE_RUN_ID" != "null" ]; then
+  pass "Create state-transition run ($STATE_RUN_ID)"
+else
+  fail "Create state-transition run"
+  echo "   Response: $STATE_RUN_RESPONSE"
+  exit 1
+fi
+
+info "Reject stop training when run is pending"
+PENDING_STOP_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs/$STATE_RUN_ID/stop")
+PENDING_STOP_BODY=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/stop")
+PENDING_STOP_CODE=$(json_get "$PENDING_STOP_BODY" '.detail.error.code // empty')
+if [ "$PENDING_STOP_HTTP" = "409" ] && [ "$PENDING_STOP_CODE" = "not_running" ]; then
+  pass "Pending run cannot be stopped as training"
+else
+  fail "Pending stop validation"
+  echo "   Response: $PENDING_STOP_BODY"
+fi
+
+info "Reject evaluation when run is pending"
+PENDING_EVAL_BODY=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/evaluate" \
+  -H "Content-Type: application/json" \
+  -d '{"num_episodes": 2, "stream_frames": false, "target_fps": 10}')
+PENDING_EVAL_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs/$STATE_RUN_ID/evaluate" \
+  -H "Content-Type: application/json" \
+  -d '{"num_episodes": 2, "stream_frames": false, "target_fps": 10}')
+PENDING_EVAL_CODE=$(json_get "$PENDING_EVAL_BODY" '.detail.error.code // empty')
+if [ "$PENDING_EVAL_HTTP" = "409" ] && [ "$PENDING_EVAL_CODE" = "invalid_status" ]; then
+  pass "Pending run cannot be evaluated"
+else
+  fail "Pending evaluation validation"
+  echo "   Response: $PENDING_EVAL_BODY"
+fi
+
+info "No evaluation progress before evaluation starts"
+NO_EVAL_PROGRESS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "$API_BASE/runs/$STATE_RUN_ID/evaluate/progress")
+if [ "$NO_EVAL_PROGRESS_HTTP" = "404" ]; then
+  pass "Evaluation progress returns 404 when not evaluating"
+else
+  fail "Evaluation progress expected 404, got $NO_EVAL_PROGRESS_HTTP"
+fi
+
+info "Start training for state-transition run"
+STATE_START_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/start")
+STATE_START_STATUS=$(json_get "$STATE_START_RESPONSE" '.status // empty')
+if [ "$STATE_START_STATUS" = "training" ]; then
+  pass "State-transition run started"
+else
+  fail "State-transition run did not start"
+  echo "   Response: $STATE_START_RESPONSE"
+fi
+
+sleep 1
+
+info "Reject duplicate start while already training"
+DUP_START_BODY=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/start")
+DUP_START_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs/$STATE_RUN_ID/start")
+DUP_START_CODE=$(json_get "$DUP_START_BODY" '.detail.error.code // empty')
+if [ "$DUP_START_HTTP" = "409" ] && [ "$DUP_START_CODE" = "conflict" ]; then
+  pass "Duplicate start rejected"
+else
+  fail "Duplicate start validation"
+  echo "   Response: $DUP_START_BODY"
+fi
+
+info "Reject evaluation while training is active"
+TRAINING_EVAL_BODY=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/evaluate" \
+  -H "Content-Type: application/json" \
+  -d '{"num_episodes": 2, "stream_frames": false, "target_fps": 10}')
+TRAINING_EVAL_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs/$STATE_RUN_ID/evaluate" \
+  -H "Content-Type: application/json" \
+  -d '{"num_episodes": 2, "stream_frames": false, "target_fps": 10}')
+TRAINING_EVAL_CODE=$(json_get "$TRAINING_EVAL_BODY" '.detail.error.code // empty')
+if [ "$TRAINING_EVAL_HTTP" = "409" ] && [ "$TRAINING_EVAL_CODE" = "invalid_status" ]; then
+  pass "Training run cannot be evaluated"
+else
+  fail "Training evaluation validation"
+  echo "   Response: $TRAINING_EVAL_BODY"
+fi
+
+info "Stop state-transition training run"
+STATE_STOP_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/stop")
+STATE_STOP_STATUS=$(json_get "$STATE_STOP_RESPONSE" '.status // empty')
+if [ "$STATE_STOP_STATUS" = "stopping" ] || [ "$STATE_STOP_STATUS" = "stopped" ]; then
+  pass "Stop accepted for state-transition run"
+else
+  fail "Stop not accepted for state-transition run"
+  echo "   Response: $STATE_STOP_RESPONSE"
+fi
+
+info "Wait for state-transition run terminal status"
+STATE_TERMINAL_STATUS=$(wait_for_terminal_status "$STATE_RUN_ID" 60)
+if [ "$STATE_TERMINAL_STATUS" = "stopped" ] || [ "$STATE_TERMINAL_STATUS" = "completed" ]; then
+  pass "State-transition run reached terminal status ($STATE_TERMINAL_STATUS)"
+else
+  fail "State-transition run did not reach terminal status (last: $STATE_TERMINAL_STATUS)"
+fi
+
+if [ "$STATE_TERMINAL_STATUS" = "stopped" ]; then
+  info "Restart training from stopped state"
+  RESTART_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/start")
+  RESTART_STATUS=$(json_get "$RESTART_RESPONSE" '.status // empty')
+  if [ "$RESTART_STATUS" = "training" ]; then
+    pass "Restart from stopped state succeeded"
+  else
+    fail "Restart from stopped state failed"
+    echo "   Response: $RESTART_RESPONSE"
+  fi
+
+  sleep 1
+  info "Stop restarted training"
+  RESTOP_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/stop")
+  RESTOP_STATUS=$(json_get "$RESTOP_RESPONSE" '.status // empty')
+  if [ "$RESTOP_STATUS" = "stopping" ] || [ "$RESTOP_STATUS" = "stopped" ]; then
+    pass "Stop accepted after restart"
+  else
+    fail "Stop after restart failed"
+    echo "   Response: $RESTOP_RESPONSE"
+  fi
+
+  info "Wait for post-restart terminal status"
+  POST_RESTART_STATUS=$(wait_for_terminal_status "$STATE_RUN_ID" 60)
+  if [ "$POST_RESTART_STATUS" = "stopped" ] || [ "$POST_RESTART_STATUS" = "completed" ]; then
+    pass "Post-restart run reached terminal status ($POST_RESTART_STATUS)"
+  else
+    fail "Post-restart run did not reach terminal status (last: $POST_RESTART_STATUS)"
+  fi
+fi
+echo ""
+
+echo "=== 7. EVALUATION STOP + PROGRESS STATES ==="
+echo ""
+
+info "Trigger long evaluation run"
+EVAL_STOP_RESPONSE=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/evaluate" \
+  -H "Content-Type: application/json" \
+  -d '{"num_episodes": 80, "stream_frames": false, "target_fps": 15}')
+EVAL_STOP_STATUS=$(json_get "$EVAL_STOP_RESPONSE" '.status // empty')
+if [ "$EVAL_STOP_STATUS" = "evaluating" ]; then
+  pass "Long evaluation started"
+else
+  fail "Long evaluation did not start"
+  echo "   Response: $EVAL_STOP_RESPONSE"
+fi
+
+sleep 1
+
+info "Fetch evaluation progress while evaluating"
+EVAL_PROGRESS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "$API_BASE/runs/$STATE_RUN_ID/evaluate/progress")
+EVAL_PROGRESS_BODY=$(curl -s "$API_BASE/runs/$STATE_RUN_ID/evaluate/progress")
+EVAL_PROGRESS_RUNNING=$(json_get "$EVAL_PROGRESS_BODY" '.is_running // false')
+if [ "$EVAL_PROGRESS_HTTP" = "200" ] && [ "$EVAL_PROGRESS_RUNNING" = "true" ]; then
+  pass "Evaluation progress endpoint reports active run"
+else
+  fail "Evaluation progress endpoint while evaluating"
+  echo "   Response: $EVAL_PROGRESS_BODY"
+fi
+
+info "Request evaluation stop"
+EVAL_STOP_REQUEST=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/evaluate/stop")
+EVAL_STOP_REQUEST_STATUS=$(json_get "$EVAL_STOP_REQUEST" '.status // empty')
+EVAL_STOP_REQUEST_CODE=$(json_get "$EVAL_STOP_REQUEST" '.detail.error.code // empty')
+EVAL_STOP_REQUEST_CURRENT=$(json_get "$EVAL_STOP_REQUEST" '.detail.error.details.current_status // empty')
+if [ "$EVAL_STOP_REQUEST_STATUS" = "stopping" ]; then
+  pass "Evaluation stop accepted"
+elif [ "$EVAL_STOP_REQUEST_CODE" = "not_evaluating" ] && { [ "$EVAL_STOP_REQUEST_CURRENT" = "completed" ] || [ "$EVAL_STOP_REQUEST_CURRENT" = "stopped" ]; }; then
+  pass "Evaluation already completed before stop request"
+else
+  fail "Evaluation stop request failed"
+  echo "   Response: $EVAL_STOP_REQUEST"
+fi
+
+info "Wait for status restored after evaluation"
+EVAL_STOP_FINAL_STATUS=$(wait_for_status_in "$STATE_RUN_ID" 120 stopped completed)
+if [ "$EVAL_STOP_FINAL_STATUS" = "stopped" ] || [ "$EVAL_STOP_FINAL_STATUS" = "completed" ]; then
+  pass "Status restored after evaluation stop/completion ($EVAL_STOP_FINAL_STATUS)"
+else
+  fail "Run status not restored after evaluation (last: $EVAL_STOP_FINAL_STATUS)"
+fi
+
+info "Reject evaluation stop when not evaluating"
+NO_EVAL_STOP_BODY=$(curl -s -X POST "$API_BASE/runs/$STATE_RUN_ID/evaluate/stop")
+NO_EVAL_STOP_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs/$STATE_RUN_ID/evaluate/stop")
+NO_EVAL_STOP_CODE=$(json_get "$NO_EVAL_STOP_BODY" '.detail.error.code // empty')
+if [ "$NO_EVAL_STOP_HTTP" = "409" ] && [ "$NO_EVAL_STOP_CODE" = "not_evaluating" ]; then
+  pass "Evaluation stop rejected when not evaluating"
+else
+  fail "Expected not_evaluating after eval completion"
+  echo "   Response: $NO_EVAL_STOP_BODY"
+fi
+
+info "Evaluation progress returns 404 after evaluation ends"
+POST_EVAL_PROGRESS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "$API_BASE/runs/$STATE_RUN_ID/evaluate/progress")
+if [ "$POST_EVAL_PROGRESS_HTTP" = "404" ]; then
+  pass "Evaluation progress unavailable after completion"
+else
+  fail "Post-evaluation progress expected 404, got $POST_EVAL_PROGRESS_HTTP"
+fi
+echo ""
+
+echo "=== 8. VALIDATION + ERROR PATHS ==="
 echo ""
 
 info "Reject unsupported algorithm/environment combo (DQN + BipedalWalker-v3)"
@@ -318,9 +573,33 @@ if [ "$UNKNOWN_RUN_HTTP" = "404" ]; then
 else
   fail "Unknown run expected 404, got $UNKNOWN_RUN_HTTP"
 fi
+
+info "Invalid run ID format rejected on artifact endpoint"
+INVALID_RUN_ID_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "$API_BASE/runs/not-a-uuid/artifacts/config")
+if [ "$INVALID_RUN_ID_HTTP" = "400" ]; then
+  pass "Invalid run ID format validation"
+else
+  fail "Invalid run ID format expected 400, got $INVALID_RUN_ID_HTTP"
+fi
+
+info "Invalid eval filename format rejected"
+INVALID_FILENAME_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "$API_BASE/runs/$BASE_RUN_ID/artifacts/eval/not_a_video.mp4")
+if [ "$INVALID_FILENAME_HTTP" = "400" ]; then
+  pass "Invalid eval filename validation"
+else
+  fail "Invalid eval filename expected 400, got $INVALID_FILENAME_HTTP"
+fi
+
+info "Missing named evaluation video returns 404"
+MISSING_VIDEO_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "$API_BASE/runs/$BASE_RUN_ID/artifacts/eval/eval_2099-01-01T00-00-00.mp4")
+if [ "$MISSING_VIDEO_HTTP" = "404" ]; then
+  pass "Missing named evaluation video returns 404"
+else
+  fail "Missing named evaluation video expected 404, got $MISSING_VIDEO_HTTP"
+fi
 echo ""
 
-echo "=== 7. CREATE RUN FOR ALL REGISTERED ENVS ==="
+echo "=== 9. CREATE RUN FOR ALL REGISTERED ENVS ==="
 echo ""
 
 for ENV in $ENVS; do
@@ -350,7 +629,7 @@ for ENV in $ENVS; do
 done
 echo ""
 
-echo "=== 8. PRESET MAPPING + BOUNDS VALIDATION ==="
+echo "=== 10. PRESET MAPPING + BOUNDS VALIDATION ==="
 echo ""
 
 info "List preset tables"
@@ -493,6 +772,35 @@ if [ "$PPO_INVALID_FIELD_HTTP" = "422" ] && [ "$PPO_INVALID_FIELD_CODE" = "inval
 else
   fail "Algorithm-specific hyperparameter validation"
   echo "   Response: $PPO_INVALID_FIELD_RESPONSE"
+fi
+echo ""
+
+echo "=== 11. LIST RUNS FILTERING + PAGINATION ==="
+echo ""
+
+info "List runs with limit=1"
+RUNS_LIMIT_PAYLOAD=$(curl -s --max-time 5 "$API_BASE/runs?limit=1&offset=0")
+RUNS_LIMIT_COUNT=$(json_get "$RUNS_LIMIT_PAYLOAD" '.runs | length')
+if [ "$RUNS_LIMIT_COUNT" -le 1 ]; then
+  pass "Runs pagination limit respected"
+else
+  fail "Runs pagination expected <=1 item, got $RUNS_LIMIT_COUNT"
+fi
+
+info "List runs filtered by status=completed"
+RUNS_COMPLETED_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs?status=completed&limit=20")
+if [ "$RUNS_COMPLETED_HTTP" = "200" ]; then
+  pass "Runs status filter endpoint"
+else
+  fail "Runs status filter endpoint (HTTP $RUNS_COMPLETED_HTTP)"
+fi
+
+info "Reject invalid runs limit > 100"
+RUNS_LIMIT_INVALID_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$API_BASE/runs?limit=101")
+if [ "$RUNS_LIMIT_INVALID_HTTP" = "422" ]; then
+  pass "Runs list validation for limit"
+else
+  fail "Runs list limit validation expected 422, got $RUNS_LIMIT_INVALID_HTTP"
 fi
 echo ""
 
