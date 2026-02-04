@@ -88,6 +88,11 @@ make test-smoke
 make test
 ```
 
+GitHub Actions automation:
+
+- `Frontend Build` + `Backend Smoke` run on every push (`main`, `codex/**`) and pull request.
+- `Backend Comprehensive` runs on push to `main`, nightly schedule, or manual workflow dispatch (with `run_comprehensive=true`).
+
 Manual invocation with explicit host (useful on some systems):
 
 ```bash
