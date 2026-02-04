@@ -168,8 +168,7 @@ BACKEND_PORT=8010 FRONTEND_PORT=3010 NEXT_PUBLIC_API_URL=http://127.0.0.1:8010/a
 ## Documentation map
 
 - `errors.md` — root causes and latest working fixes (read before flow changes).
-- `docs/assets/frontend-design-reference.png` — target UI design reference.
-- `docs/assets/frontend-screenshot.png` — current app screenshot.
+- `docs/assets/frontend-design-reference.png` — latest UI sample.
 
 ## Roadmap status
 
