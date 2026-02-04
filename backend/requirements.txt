@@ -9,3 +9,5 @@ aiosqlite>=0.19.0
 # For streaming
 websockets>=12.0
 Pillow>=10.0.0
+# Gymnasium RecordVideo backend dependency for evaluation MP4 generation
+moviepy>=1.0.3

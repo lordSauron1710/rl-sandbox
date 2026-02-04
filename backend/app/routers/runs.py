@@ -299,19 +299,35 @@ def _build_run_response(run_dict: dict) -> RunResponse:
         manager = get_training_manager()
         manager_progress = manager.get_progress(run_dict["id"])
         
-        if manager_progress and manager_progress["is_running"]:
+        is_active_status = run_dict["status"] in {
+            RunStatus.PENDING.value,
+            RunStatus.TRAINING.value,
+            RunStatus.EVALUATING.value,
+        }
+
+        if manager_progress and manager_progress["is_running"] and is_active_status:
             # Use live data from training manager
             current_timestep = manager_progress["current_timestep"]
+            live_percent_complete = manager_progress["percent_complete"]
+            percent_complete = max(0.0, min(100.0, live_percent_complete))
             progress = RunProgress(
                 current_timestep=current_timestep,
                 total_timesteps=total_timesteps,
-                percent_complete=manager_progress["percent_complete"],
+                percent_complete=percent_complete,
                 episodes_completed=metrics_count,
             )
         else:
             # Use stored metrics data
             current_timestep = latest.get("timestep", 0) if metrics else 0
-            percent_complete = (current_timestep / total_timesteps * 100) if total_timesteps > 0 else 0
+            if run_dict["status"] == RunStatus.COMPLETED.value:
+                # Completed runs should always report a fully complete progress bar,
+                # including adaptive early-stop runs that ended before configured timesteps.
+                percent_complete = 100.0
+            else:
+                percent_complete = (
+                    current_timestep / total_timesteps * 100 if total_timesteps > 0 else 0
+                )
+                percent_complete = max(0.0, min(100.0, percent_complete))
             progress = RunProgress(
                 current_timestep=current_timestep,
                 total_timesteps=total_timesteps,

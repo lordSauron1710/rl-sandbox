@@ -19,6 +19,10 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 from app.storage.run_storage import RunStorage
 from app.streaming.pubsub import get_metrics_pubsub, get_frames_pubsub
+from app.training.early_stopping import (
+    detect_reward_saturation,
+    get_reward_saturation_config,
+)
 
 
 class MetricsCallback(BaseCallback):
@@ -46,6 +50,8 @@ class MetricsCallback(BaseCallback):
     def __init__(
         self,
         run_id: str,
+        env_id: str,
+        algorithm: str,
         total_timesteps: int,
         stop_flag: Callable[[], bool],
         on_progress: Optional[Callable[[int, int], None]] = None,
@@ -60,6 +66,8 @@ class MetricsCallback(BaseCallback):
 
         Args:
             run_id: The run ID for storage
+            env_id: Environment ID for reward saturation heuristics
+            algorithm: Algorithm name (PPO/DQN)
             total_timesteps: Total timesteps for training (for progress)
             stop_flag: Callable that returns True if training should stop
             on_progress: Optional callback for progress updates (current, total)
@@ -71,6 +79,8 @@ class MetricsCallback(BaseCallback):
         """
         super().__init__(verbose)
         self.run_id = run_id
+        self.env_id = env_id
+        self.algorithm = algorithm
         self.total_timesteps = total_timesteps
         self.stop_flag = stop_flag
         self.on_progress = on_progress
@@ -103,6 +113,10 @@ class MetricsCallback(BaseCallback):
         self.frame_interval = 1.0 / frame_fps
         self.current_episode_reward: float = 0.0
         self.current_step_in_episode: int = 0
+        self._terminal_status: str = "completed"
+        self._terminal_reason: str = "training_complete"
+        self.early_stopping: Optional[dict[str, Any]] = None
+        self.reward_saturation_config = get_reward_saturation_config(env_id)
 
         # Set target FPS for frames pubsub
         if enable_frame_streaming:
@@ -126,14 +140,8 @@ class MetricsCallback(BaseCallback):
         if self.stop_flag():
             if self.verbose > 0:
                 print(f"[MetricsCallback] Stop requested at step {self.num_timesteps}")
-            # Notify subscribers of stop
-            self.metrics_pubsub.publish_training_complete(
-                self.run_id,
-                final_episode=self.episode_count,
-                total_timesteps=self.num_timesteps,
-                status="stopped",
-            )
-            self.frames_pubsub.publish_end(self.run_id, "training_stopped")
+            self._terminal_status = "stopped"
+            self._terminal_reason = "training_stopped"
             return False
 
         # Track step reward for frame metadata
@@ -158,6 +166,25 @@ class MetricsCallback(BaseCallback):
                 # Log metrics every log_interval episodes
                 if self.episode_count % self.log_interval == 0:
                     self._log_metrics(ep_reward, ep_length)
+
+                saturation = detect_reward_saturation(
+                    rewards=self.episode_rewards,
+                    config=self.reward_saturation_config,
+                    episode=self.episode_count,
+                    timestep=self.num_timesteps,
+                )
+                if saturation is not None:
+                    self.early_stopping = saturation
+                    self._terminal_status = "completed"
+                    self._terminal_reason = "reward_saturation"
+                    if self.verbose > 0:
+                        print(
+                            "[MetricsCallback] Early stop triggered "
+                            f"({saturation['reason']}) at episode "
+                            f"{self.episode_count}: mean="
+                            f"{saturation['recent_mean_reward']:.2f}"
+                        )
+                    return False
 
                 # Reset episode tracking
                 self.current_episode_reward = 0.0
@@ -315,9 +342,9 @@ class MetricsCallback(BaseCallback):
             self.run_id,
             final_episode=self.episode_count,
             total_timesteps=self.num_timesteps,
-            status="completed",
+            status=self._terminal_status,
         )
-        self.frames_pubsub.publish_end(self.run_id, "training_complete")
+        self.frames_pubsub.publish_end(self.run_id, self._terminal_reason)
 
     def get_summary(self) -> Dict[str, Any]:
         """Get a summary of training progress."""
@@ -333,4 +360,17 @@ class MetricsCallback(BaseCallback):
             ),
             "total_timesteps": self.num_timesteps,
             "episodes": len(self.episode_rewards),
+            "early_stopping": self.early_stopping,
+            "saturation_config": {
+                "env_id": self.env_id,
+                "algorithm": self.algorithm,
+                "min_episodes": self.reward_saturation_config.min_episodes,
+                "window_size": self.reward_saturation_config.window_size,
+                "comparison_window_size": self.reward_saturation_config.comparison_window_size,
+                "max_recent_std": self.reward_saturation_config.max_recent_std,
+                "min_improvement": self.reward_saturation_config.min_improvement,
+                "min_reward_for_plateau": self.reward_saturation_config.min_reward_for_plateau,
+                "target_reward": self.reward_saturation_config.target_reward,
+                "target_tolerance": self.reward_saturation_config.target_tolerance,
+            },
         }

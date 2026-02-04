@@ -204,6 +204,19 @@ if [ "$BASE_FINAL_STATUS" = "stopped" ] || [ "$BASE_FINAL_STATUS" = "completed" 
 else
   fail "Run did not reach terminal status in time (last: $BASE_FINAL_STATUS)"
 fi
+
+info "Verify completed run reports 100% training progress"
+BASE_RUN_PAYLOAD=$(curl -s --max-time 5 "$API_BASE/runs/$BASE_RUN_ID")
+BASE_PROGRESS_PERCENT=$(json_get "$BASE_RUN_PAYLOAD" '.progress.percent_complete // -1')
+if [ "$BASE_FINAL_STATUS" = "completed" ]; then
+  if [ "$BASE_PROGRESS_PERCENT" = "100" ] || [ "$BASE_PROGRESS_PERCENT" = "100.0" ]; then
+    pass "Completed run progress is 100%"
+  else
+    fail "Completed run progress expected 100%, got $BASE_PROGRESS_PERCENT"
+  fi
+else
+  pass "Skipped 100% progress check because run status is $BASE_FINAL_STATUS"
+fi
 echo ""
 
 echo "=== 4. ARTIFACT ENDPOINTS ==="

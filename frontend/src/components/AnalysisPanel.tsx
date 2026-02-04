@@ -4,6 +4,8 @@ import type { AnalysisInsight } from '@/types/analysis'
 
 interface AnalysisPanelProps {
   insight?: AnalysisInsight
+  eli5Insight?: AnalysisInsight | null
+  isEli5Enabled?: boolean
   onGenerateReport: () => void
   onOpenReports: () => void
   onQuickDownload: () => void
@@ -12,19 +14,25 @@ interface AnalysisPanelProps {
 
 export function AnalysisPanel({
   insight,
+  eli5Insight = null,
+  isEli5Enabled = false,
   onGenerateReport,
   onOpenReports,
   onQuickDownload,
   hasReports,
 }: AnalysisPanelProps) {
+  const displayedInsight = isEli5Enabled ? eli5Insight ?? null : insight ?? null
+
   return (
     <div className="p-4 border-b border-border">
-      <div className="label text-black mb-2">POLICY BEHAVIOR DETECTED</div>
+      <div className="label text-black mb-2">
+        {isEli5Enabled ? 'POLICY BEHAVIOR (ELI5 MODE)' : 'POLICY BEHAVIOR DETECTED'}
+      </div>
 
-      {insight ? (
+      {displayedInsight ? (
         <>
-          <div className="font-mono text-[11px] text-black mb-2">{insight.title}</div>
-          {insight.paragraphs.map((paragraph, index) => (
+          <div className="font-mono text-[11px] text-black mb-2">{displayedInsight.title}</div>
+          {displayedInsight.paragraphs.map((paragraph, index) => (
             <p
               key={index}
               className="font-sans text-[13px] text-text-secondary mb-3 leading-relaxed"
@@ -35,7 +43,9 @@ export function AnalysisPanel({
         </>
       ) : (
         <p className="font-sans text-[13px] text-text-secondary leading-relaxed mb-3">
-          Start training or evaluation to surface policy behavior notes.
+          {isEli5Enabled
+            ? 'Start training or test mode and I will explain it in very simple words.'
+            : 'Start training or evaluation to surface policy behavior notes.'}
         </p>
       )}
 

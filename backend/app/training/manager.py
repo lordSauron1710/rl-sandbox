@@ -207,12 +207,24 @@ class TrainingManager:
                 result = runner.run()
 
                 # Determine final status
+                early_stopping = result.get("early_stopping")
                 if result["success"]:
                     if result["stopped"]:
                         final_status = RunStatus.STOPPED
                         event_type = EventType.TRAINING_STOPPED
                         msg = (f"Training stopped by user after "
                                f"{result['episodes']} episodes")
+                    elif early_stopping:
+                        final_status = RunStatus.COMPLETED
+                        event_type = EventType.TRAINING_COMPLETED
+                        stop_reason = early_stopping.get("reason", "reward_saturation")
+                        msg = (
+                            "Training completed early due to "
+                            f"{stop_reason} at episode "
+                            f"{early_stopping.get('episode', result['episodes'])} "
+                            f"(mean reward: "
+                            f"{early_stopping.get('recent_mean_reward', result['mean_reward']):.2f})"
+                        )
                     else:
                         final_status = RunStatus.COMPLETED
                         event_type = EventType.TRAINING_COMPLETED

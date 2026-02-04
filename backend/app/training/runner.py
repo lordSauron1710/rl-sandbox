@@ -185,6 +185,8 @@ class TrainingRunner:
             # Create callbacks
             metrics_callback = MetricsCallback(
                 run_id=self.run_id,
+                env_id=self.env_id,
+                algorithm=self.algorithm,
                 total_timesteps=total_timesteps,
                 stop_flag=self.stop_flag,
                 on_progress=self.on_progress,
@@ -234,6 +236,8 @@ class TrainingRunner:
                 "timesteps": summary["total_timesteps"],
                 "mean_reward": summary["mean_reward"],
                 "stopped": was_stopped,
+                "early_stopping": summary.get("early_stopping"),
+                "saturation_config": summary.get("saturation_config"),
                 "error": None,
             }
 
