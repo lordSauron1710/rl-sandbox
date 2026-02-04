@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GeneratedReport, ReportFormat } from '@/services/reportGenerator'
 
 interface ReportWorkflowProps {
@@ -11,6 +11,15 @@ interface ReportWorkflowProps {
   onDelete: (report: GeneratedReport) => void
   onDeleteAll: () => void
 }
+
+const FORMAT_OPTIONS: Array<{
+  id: ReportFormat
+  viewLabel: string
+  downloadLabel: string
+}> = [
+  { id: 'text', viewLabel: 'View TXT', downloadLabel: 'Download TXT' },
+  { id: 'json', viewLabel: 'View JSON', downloadLabel: 'Download JSON' },
+]
 
 function formatGeneratedAt(isoTimestamp: string): string {
   const date = new Date(isoTimestamp)
@@ -35,6 +44,7 @@ export function ReportWorkflow({
 }: ReportWorkflowProps) {
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
   const [activeFormat, setActiveFormat] = useState<ReportFormat>('text')
+  const previewRef = useRef<HTMLPreElement | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -64,6 +74,16 @@ export function ReportWorkflow({
     () => reports.find((report) => report.id === selectedReportId) ?? null,
     [reports, selectedReportId]
   )
+  const activeContent = useMemo(() => {
+    if (!selectedReport) return ''
+    return activeFormat === 'json' ? selectedReport.jsonContent : selectedReport.textContent
+  }, [activeFormat, selectedReport])
+
+  useEffect(() => {
+    if (!previewRef.current) return
+    previewRef.current.scrollTop = 0
+    previewRef.current.scrollLeft = 0
+  }, [selectedReport?.id, activeFormat])
 
   if (!isOpen) return null
 
@@ -182,56 +202,46 @@ export function ReportWorkflow({
                         role="tablist"
                         aria-label="Report view format"
                       >
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={activeFormat === 'text'}
-                          className={`px-3 py-1.5 text-[10px] uppercase tracking-wider transition-colors ${
-                            activeFormat === 'text'
-                              ? 'bg-black text-white'
-                              : 'bg-white text-black hover:bg-surface-secondary'
-                          }`}
-                          onClick={() => setActiveFormat('text')}
-                        >
-                          View TXT
-                        </button>
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={activeFormat === 'json'}
-                          className={`border-l border-black px-3 py-1.5 text-[10px] uppercase tracking-wider transition-colors ${
-                            activeFormat === 'json'
-                              ? 'bg-black text-white'
-                              : 'bg-white text-black hover:bg-surface-secondary'
-                          }`}
-                          onClick={() => setActiveFormat('json')}
-                        >
-                          View JSON
-                        </button>
+                        {FORMAT_OPTIONS.map((option, index) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={activeFormat === option.id}
+                            className={`${index === 0 ? '' : 'border-l border-black'} px-3 py-1.5 text-[10px] uppercase tracking-wider transition-colors ${
+                              activeFormat === option.id
+                                ? 'bg-black text-white'
+                                : 'bg-white text-black hover:bg-surface-secondary'
+                            }`}
+                            onClick={() => setActiveFormat(option.id)}
+                          >
+                            {option.viewLabel}
+                          </button>
+                        ))}
                       </div>
 
-                      <button
-                        type="button"
-                        className="btn btn-secondary w-auto px-3 py-1.5 text-[10px]"
-                        onClick={() => onDownload(selectedReport, 'text')}
-                      >
-                        DOWNLOAD TXT
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary w-auto px-3 py-1.5 text-[10px]"
-                        onClick={() => onDownload(selectedReport, 'json')}
-                      >
-                        DOWNLOAD JSON
-                      </button>
+                      {FORMAT_OPTIONS.map((option) => (
+                        <button
+                          key={option.downloadLabel}
+                          type="button"
+                          className="btn btn-secondary w-auto px-3 py-1.5 text-[10px]"
+                          onClick={() => onDownload(selectedReport, option.id)}
+                        >
+                          {option.downloadLabel}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
 
-                <pre className="mt-3 min-h-0 flex-1 overflow-auto rounded border border-border bg-surface-secondary p-3 text-[11px] leading-relaxed text-black scrollbar-thin">
-                  {activeFormat === 'json'
-                    ? selectedReport.jsonContent
-                    : selectedReport.textContent}
+                <pre
+                  ref={previewRef}
+                  key={`${selectedReport.id}-${activeFormat}`}
+                  className={`mt-3 min-h-0 flex-1 overflow-auto rounded border border-border bg-surface-secondary p-3 text-[11px] leading-relaxed text-black scrollbar-thin ${
+                    activeFormat === 'text' ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
+                  }`}
+                >
+                  {activeContent}
                 </pre>
               </div>
             ) : (

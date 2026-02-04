@@ -471,6 +471,29 @@ if [ "$UNKNOWN_PARAM_HTTP" = "422" ]; then
 else
   fail "Unknown hyperparameter expected 422, got $UNKNOWN_PARAM_HTTP"
 fi
+
+info "Reject DQN-only hyperparameters when algorithm is PPO"
+PPO_INVALID_FIELD_RESPONSE=$(curl -s -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "PPO",
+    "hyperparameters": {"buffer_size": 200000}
+  }')
+PPO_INVALID_FIELD_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_id": "CartPole-v1",
+    "algorithm": "PPO",
+    "hyperparameters": {"buffer_size": 200000}
+  }')
+PPO_INVALID_FIELD_CODE=$(echo "$PPO_INVALID_FIELD_RESPONSE" | jq -r '.detail.error.code // empty' 2>/dev/null || true)
+if [ "$PPO_INVALID_FIELD_HTTP" = "422" ] && [ "$PPO_INVALID_FIELD_CODE" = "invalid_hyperparameters" ]; then
+  pass "Algorithm-specific hyperparameter validation"
+else
+  fail "Algorithm-specific hyperparameter validation"
+  echo "   Response: $PPO_INVALID_FIELD_RESPONSE"
+fi
 echo ""
 
 echo "================================"
