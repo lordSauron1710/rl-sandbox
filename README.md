@@ -1,25 +1,35 @@
 # RL Sandbox (RL Gym Visualizer)
 
-Lightweight RL training + evaluation visualizer built with FastAPI (backend) and Next.js (frontend).
+Lightweight RL training and evaluation visualizer with a Next.js dashboard and FastAPI backend.
 
-![Latest UI Sample](docs/assets/frontend-design-reference.png)
+[![CI](https://github.com/lordSauron1710/rl-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/lordSauron1710/rl-sandbox/actions/workflows/ci.yml)
+[![Stars](https://img.shields.io/github/stars/lordSauron1710/rl-sandbox?style=flat)](https://github.com/lordSauron1710/rl-sandbox/stargazers)
+[![Forks](https://img.shields.io/github/forks/lordSauron1710/rl-sandbox?style=flat)](https://github.com/lordSauron1710/rl-sandbox/network/members)
+[![Issues](https://img.shields.io/github/issues/lordSauron1710/rl-sandbox)](https://github.com/lordSauron1710/rl-sandbox/issues)
+[![License](https://img.shields.io/badge/license-MIT-green)](#license)
 
-## What this project does
+![RL Sandbox UI](docs/assets/frontend-design-reference.png)
 
-- Trains RL agents with PPO and DQN (SB3).
-- Applies training presets (`fast`, `stable`, `high_score`) with server-side bounds validation.
-- Streams live metrics over SSE and live environment frames over WebSocket.
-- Records evaluation runs and serves MP4 artifacts.
-- Provides a responsive 3-column dashboard for environment setup, live feed, and logs.
+## Star tracker
+
+[![Star History Chart](https://api.star-history.com/svg?repos=lordSauron1710/rl-sandbox&type=Date)](https://star-history.com/#lordSauron1710/rl-sandbox&Date)
+
+## What it does
+
+- Trains PPO and DQN agents on supported Gymnasium environments.
+- Streams live metrics (SSE) and frames (WebSocket) to a single-page dashboard.
+- Runs evaluation episodes, records MP4 artifacts, and serves latest results.
+- Persists run metadata in SQLite and artifacts on disk.
+- Supports production split deployment: Vercel frontend + Fly.io backend.
 
 ## Architecture
 
-```
-Frontend (Next.js)  <---- REST / SSE / WS ---->  Backend (FastAPI + Gymnasium + SB3)
-        Vercel-ish                                Fly.io-ish / long-running process
+```text
+Frontend (Next.js)  <---- REST / SSE / WS ---->  Backend (FastAPI + SB3 + Gymnasium)
+Vercel                                       Fly.io (long-running worker + persistence)
 ```
 
-## Supported environments
+## Supported environments and features
 
 | Environment | Action Space | Observation Space | Algorithms |
 |---|---|---|---|
@@ -27,33 +37,59 @@ Frontend (Next.js)  <---- REST / SSE / WS ---->  Backend (FastAPI + Gymnasium + 
 | `CartPole-v1` | Discrete (2) | Box(4) | PPO, DQN |
 | `BipedalWalker-v3` | Continuous (4) | Box(24) | PPO |
 
+## Repository subway map
+
+```mermaid
+flowchart LR
+  root["rl-sandbox/"]
+
+  root --> frontend["Frontend Line: frontend/"]
+  root --> backend["Backend Line: backend/"]
+  root --> docs["Docs Line: docs/"]
+  root --> scripts["Ops Line: scripts/"]
+
+  frontend --> f1["src/app (dashboard shell)"]
+  frontend --> f2["src/components (UI panels)"]
+  frontend --> f3["src/hooks (runtime streams/state)"]
+  frontend --> f4["src/services (API client)"]
+
+  backend --> b1["app/routers (REST routes)"]
+  backend --> b2["app/training (runner + evaluator + queue)"]
+  backend --> b3["app/streaming (SSE/WS pubsub)"]
+  backend --> b4["app/db + app/storage (SQLite + artifacts)"]
+
+  docs --> d1["deployment.md"]
+  docs --> d2["assets/ (reference visuals)"]
+
+  scripts --> s1["dev.sh (one-command local dev)"]
+```
+
 ## Repository layout
 
 ```text
 rl-sandbox/
 ├── backend/
 │   ├── app/
-│   │   ├── db/            # SQLite schema + repositories
-│   │   ├── models/        # Pydantic/domain models
-│   │   ├── routers/       # REST endpoints
-│   │   ├── streaming/     # SSE / WebSocket infrastructure
-│   │   ├── storage/       # Run artifact storage
-│   │   ├── training/      # Training/evaluation runners
-│   │   └── main.py
+│   │   ├── db/
+│   │   ├── models/
+│   │   ├── routers/
+│   │   ├── storage/
+│   │   ├── streaming/
+│   │   └── training/
+│   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
-│   ├── src/app/           # Next app shell/page
-│   ├── src/components/    # Dashboard UI
-│   ├── src/hooks/         # Runtime hooks (training/streaming)
-│   └── src/services/      # API client
+│   ├── src/
+│   │   ├── app/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   └── services/
+│   └── vercel.json
+├── docs/
 ├── scripts/
-│   └── dev.sh             # One-command local dev runner
-├── .env.example           # Shared backend/frontend local env template
-├── docs/assets/           # Reference and screenshot images
-├── roadmap.md             # Prompt roadmap
-├── errors.md              # Known issues + latest working fixes
-├── test-smoke.sh
-└── test-comprehensive.sh
+├── fly.toml
+├── roadmap.md
+└── README.md
 ```
 
 ## Prerequisites
@@ -64,115 +100,68 @@ rl-sandbox/
 
 ## Quick start
 
-### 1) Configure local env vars (optional but recommended)
-
 ```bash
 cp .env.example .env
-```
-
-Update `.env` if you need non-default ports, backend URL, or custom run-artifact location.
-
-### 2) Start backend + frontend with one command
-
-```bash
 make dev
 ```
 
-`make dev` runs `scripts/dev.sh` and will:
-
-- Load `.env` / `.env.local` if present
-- Auto-create `backend/.venv` and install Python deps when needed
-- Auto-install frontend deps when lockfile changes
-- Start backend + frontend together and shut both down cleanly
-
-```bash
-make dev-check
-```
-
-Use `make dev-check` to validate env vars, dependency state, and paths without starting servers.
-
-Services:
+Local URLs:
 
 - Frontend: `http://127.0.0.1:3000`
-- Backend API: `http://127.0.0.1:8000`
+- Backend API: `http://127.0.0.1:8000/api/v1`
 - Backend docs: `http://127.0.0.1:8000/docs`
+
+Production deployment guide:
+
+- `docs/deployment.md`
 
 ## Test commands
 
-Backend must be running first.
+Backend should be running first.
 
 ```bash
 make test-smoke
 make test
 ```
 
-GitHub Actions automation:
-
-- `Frontend Build` + `Backend Smoke` run on every push (`main`, `codex/**`) and pull request.
-- `Backend Comprehensive` runs on push to `main`, nightly schedule, or manual workflow dispatch (with `run_comprehensive=true`).
-
-Manual invocation with explicit host (useful on some systems):
-
-```bash
-API_BASE=http://127.0.0.1:8000/api/v1 HEALTH_URL=http://127.0.0.1:8000/health bash test-smoke.sh
-API_BASE=http://127.0.0.1:8000/api/v1 HEALTH_URL=http://127.0.0.1:8000/health bash test-comprehensive.sh
-```
-
 ## Key API routes
-
-Base API: `http://localhost:8000/api/v1`
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/environments` | GET | List available environments |
-| `/environments/{id}/preview` | GET | Get idle preview frame (JPEG) |
-| `/runs/presets` | GET | List preset tables + hyperparameter bounds |
-| `/runs` | POST | Create run |
-| `/runs/{id}/start` | POST | Start training |
-| `/runs/{id}/stop` | POST | Stop training |
-| `/runs/{id}/evaluate` | POST | Start evaluation |
-| `/runs/{id}/stream/metrics` | GET (SSE) | Live metrics stream |
-| `/runs/{id}/ws/frames` | WS | Live frame stream |
-| `/runs/{id}/artifacts/*` | GET | Config/metrics/eval artifacts |
-
-Use FastAPI docs (`http://localhost:8000/docs`) for full request/response schemas.
+| `/health` | GET | Service health check |
+| `/api/v1/environments` | GET | List supported environments |
+| `/api/v1/runs` | POST | Create run |
+| `/api/v1/runs/{id}/start` | POST | Start/queue training |
+| `/api/v1/runs/{id}/stop` | POST | Stop training |
+| `/api/v1/runs/{id}/evaluate` | POST | Start/queue evaluation |
+| `/api/v1/runs/{id}/stream/metrics` | GET (SSE) | Stream live metrics |
+| `/api/v1/runs/{id}/ws/frames` | WS | Stream live frames |
+| `/api/v1/runs/{id}/artifacts/eval/latest.mp4` | GET | Fetch latest evaluation video |
 
 ## Environment variables
 
-`make dev` / `scripts/dev.sh` read env vars from shell and optional `.env` files.
-
 | Variable | Scope | Default | Notes |
 |---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | Frontend | `http://127.0.0.1:8000/api/v1` | Backend API base URL used by Next.js client code |
-| `RLV_RUNS_DIR` | Backend | `<repo>/backend/runs` | Path for run artifacts; relative values are resolved from repo root by `scripts/dev.sh` |
-| `CORS_ORIGINS` | Backend | Derived from frontend host/port | Comma-separated allowed origins |
-| `BACKEND_HOST` | Dev runner | `127.0.0.1` | Host for Uvicorn bind |
-| `BACKEND_PORT` | Dev runner | `8000` | Port for Uvicorn bind |
-| `FRONTEND_HOST` | Dev runner | `127.0.0.1` | Host for Next.js dev server |
-| `FRONTEND_PORT` | Dev runner | `3000` | Port for Next.js dev server |
-
-Example custom run:
-
-```bash
-BACKEND_PORT=8010 FRONTEND_PORT=3010 NEXT_PUBLIC_API_URL=http://127.0.0.1:8010/api/v1 make dev
-```
-
-## Troubleshooting
-
-- `Backend port ... is already in use`: stop old process or run with `BACKEND_PORT=<new-port>`.
-- `Frontend port ... is already in use`: stop old process or run with `FRONTEND_PORT=<new-port>`.
-- Frontend calls wrong backend: set `NEXT_PUBLIC_API_URL` and restart `make dev`.
-- Artifacts not written where expected: set `RLV_RUNS_DIR`, then run `make dev-check`.
-- Validate setup without launching servers: `make dev-check`.
+| `NEXT_PUBLIC_API_URL` | Frontend | `http://127.0.0.1:8000/api/v1` | API base URL used by frontend |
+| `RLV_RUNS_DIR` | Backend | `backend/runs` | Artifact storage root |
+| `RLV_DB_PATH` | Backend | `backend/data/rl_visualizer.db` | SQLite database path |
+| `CORS_ORIGINS` | Backend | local frontend origins | Comma-separated allowed origins |
+| `CORS_ORIGIN_REGEX` | Backend | unset | Optional regex for preview domains |
+| `FRONTEND_URL` | Backend | unset | Optional single frontend origin |
+| `BACKEND_HOST` | Dev runner | `127.0.0.1` | Uvicorn host |
+| `BACKEND_PORT` | Dev runner | `8000` | Uvicorn port |
+| `FRONTEND_HOST` | Dev runner | `127.0.0.1` | Next.js host |
+| `FRONTEND_PORT` | Dev runner | `3000` | Next.js port |
 
 ## Documentation map
 
-- `errors.md` — root causes and latest working fixes (read before flow changes).
-- `docs/assets/frontend-design-reference.png` — latest UI sample.
+- `docs/deployment.md`: production deployment on Vercel + Fly.io
+- `errors.md`: latest known issues and fixes
+- `roadmap.md`: implementation roadmap and prompt status
 
 ## Roadmap status
 
-Prompts 01–17 in `roadmap.md` are executed. Prompts 18+ are planned follow-up work.
+- Prompts 01-19 are marked executed in `roadmap.md`.
 
 ## License
 

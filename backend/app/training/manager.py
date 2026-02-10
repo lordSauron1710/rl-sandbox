@@ -8,6 +8,7 @@ This module provides:
 - Singleton pattern for global access
 """
 import threading
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
@@ -80,6 +81,8 @@ class TrainingManager:
 
         self._jobs: Dict[str, TrainingJob] = {}
         self._eval_jobs: Dict[str, EvaluationJob] = {}
+        self._training_outcomes: Dict[str, Dict[str, Any]] = {}
+        self._evaluation_outcomes: Dict[str, Dict[str, Any]] = {}
         self._jobs_lock = threading.Lock()
         self._initialized = True
 
@@ -113,6 +116,12 @@ class TrainingManager:
                 "is_running": job.thread.is_alive(),
                 "started_at": job.started_at.isoformat(),
             }
+
+    def get_last_training_outcome(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Get final training outcome metadata for a run."""
+        with self._jobs_lock:
+            outcome = self._training_outcomes.get(run_id)
+            return deepcopy(outcome) if outcome else None
 
     def start_training(self, run_id: str) -> Dict[str, Any]:
         """
@@ -174,6 +183,9 @@ class TrainingManager:
 
         # Training thread function
         def training_thread():
+            training_result: Optional[Dict[str, Any]] = None
+            final_status = RunStatus.FAILED
+            unexpected_error: Optional[str] = None
             try:
                 # Update status to training
                 runs_repository.update_run_status(
@@ -204,16 +216,16 @@ class TrainingManager:
                     verbose=1,
                 )
 
-                result = runner.run()
+                training_result = runner.run()
 
                 # Determine final status
-                early_stopping = result.get("early_stopping")
-                if result["success"]:
-                    if result["stopped"]:
+                early_stopping = training_result.get("early_stopping")
+                if training_result["success"]:
+                    if training_result["stopped"]:
                         final_status = RunStatus.STOPPED
                         event_type = EventType.TRAINING_STOPPED
                         msg = (f"Training stopped by user after "
-                               f"{result['episodes']} episodes")
+                               f"{training_result['episodes']} episodes")
                     elif early_stopping:
                         final_status = RunStatus.COMPLETED
                         event_type = EventType.TRAINING_COMPLETED
@@ -221,20 +233,20 @@ class TrainingManager:
                         msg = (
                             "Training completed early due to "
                             f"{stop_reason} at episode "
-                            f"{early_stopping.get('episode', result['episodes'])} "
+                            f"{early_stopping.get('episode', training_result['episodes'])} "
                             f"(mean reward: "
-                            f"{early_stopping.get('recent_mean_reward', result['mean_reward']):.2f})"
+                            f"{early_stopping.get('recent_mean_reward', training_result['mean_reward']):.2f})"
                         )
                     else:
                         final_status = RunStatus.COMPLETED
                         event_type = EventType.TRAINING_COMPLETED
-                        msg = (f"Training completed: {result['episodes']} "
+                        msg = (f"Training completed: {training_result['episodes']} "
                                f"episodes, mean reward: "
-                               f"{result['mean_reward']:.2f}")
+                               f"{training_result['mean_reward']:.2f}")
                 else:
                     final_status = RunStatus.FAILED
                     event_type = EventType.TRAINING_FAILED
-                    msg = f"Training failed: {result['error']}"
+                    msg = f"Training failed: {training_result['error']}"
 
                 # Update status
                 runs_repository.update_run_status(
@@ -248,11 +260,11 @@ class TrainingManager:
                     run_id=run_id,
                     event_type=event_type,
                     message=msg,
-                    metadata=result,
+                    metadata=training_result,
                 )
 
                 # Save checkpoint event
-                if result["success"]:
+                if training_result["success"]:
                     events_repository.create_event(
                         run_id=run_id,
                         event_type=EventType.CHECKPOINT_SAVED,
@@ -261,6 +273,7 @@ class TrainingManager:
 
             except Exception as e:
                 # Handle unexpected errors
+                unexpected_error = str(e)
                 runs_repository.update_run_status(
                     run_id=run_id,
                     status=RunStatus.FAILED,
@@ -274,7 +287,18 @@ class TrainingManager:
 
             finally:
                 # Cleanup job from active jobs
+                completed_at = datetime.now(timezone.utc).isoformat()
+                error_message = unexpected_error
+                if not error_message and training_result and not training_result.get("success"):
+                    error_message = training_result.get("error")
                 with self._jobs_lock:
+                    self._training_outcomes[run_id] = {
+                        "success": bool(training_result.get("success")) if training_result else False,
+                        "final_status": final_status.value,
+                        "result": training_result,
+                        "error": error_message,
+                        "completed_at": completed_at,
+                    }
                     if run_id in self._jobs:
                         del self._jobs[run_id]
 
@@ -289,6 +313,7 @@ class TrainingManager:
         # Register job
         with self._jobs_lock:
             self._jobs[run_id] = job
+            self._training_outcomes.pop(run_id, None)
 
         # Start training
         thread.start()
@@ -384,6 +409,12 @@ class TrainingManager:
                 "started_at": job.started_at.isoformat(),
             }
 
+    def get_last_evaluation_outcome(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Get final evaluation outcome metadata for a run."""
+        with self._jobs_lock:
+            outcome = self._evaluation_outcomes.get(run_id)
+            return deepcopy(outcome) if outcome else None
+
     def start_evaluation(
         self,
         run_id: str,
@@ -454,6 +485,9 @@ class TrainingManager:
 
         # Evaluation thread function
         def evaluation_thread():
+            summary: Optional[EvaluationSummary] = None
+            succeeded = False
+            error_message: Optional[str] = None
             try:
                 # Update status to evaluating
                 runs_repository.update_run_status(
@@ -494,6 +528,7 @@ class TrainingManager:
                 )
 
                 summary = runner.run()
+                succeeded = True
 
                 # Log evaluation completed
                 events_repository.create_event(
@@ -512,10 +547,11 @@ class TrainingManager:
 
             except Exception as e:
                 # Handle errors
+                error_message = str(e)
                 events_repository.create_event(
                     run_id=run_id,
                     event_type=EventType.ERROR,
-                    message=f"Evaluation failed: {str(e)}",
+                    message=f"Evaluation failed: {error_message}",
                 )
                 # Restore previous status on error
                 runs_repository.update_run_status(
@@ -525,7 +561,15 @@ class TrainingManager:
 
             finally:
                 # Cleanup job from active jobs
+                completed_at = datetime.now(timezone.utc).isoformat()
                 with self._jobs_lock:
+                    self._evaluation_outcomes[run_id] = {
+                        "success": succeeded,
+                        "restored_status": previous_status,
+                        "summary": summary.to_dict() if summary else None,
+                        "error": error_message,
+                        "completed_at": completed_at,
+                    }
                     if run_id in self._eval_jobs:
                         del self._eval_jobs[run_id]
 
@@ -540,6 +584,7 @@ class TrainingManager:
         # Register job
         with self._jobs_lock:
             self._eval_jobs[run_id] = job
+            self._evaluation_outcomes.pop(run_id, None)
 
         # Start evaluation
         thread.start()

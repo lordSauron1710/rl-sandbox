@@ -8,6 +8,7 @@ FRONTEND_HOST ?= 127.0.0.1
 FRONTEND_PORT ?= 3000
 NEXT_PUBLIC_API_URL ?= http://$(BACKEND_HOST):$(BACKEND_PORT)/api/v1
 RLV_RUNS_DIR ?= $(CURDIR)/backend/runs
+RLV_DB_PATH ?= $(CURDIR)/backend/data/rl_visualizer.db
 
 .PHONY: help install install-backend install-frontend dev dev-check backend frontend test-smoke test clean
 
@@ -27,6 +28,7 @@ help:
 	@echo "Common overrides:"
 	@echo "  BACKEND_PORT=8010 FRONTEND_PORT=3010 make dev"
 	@echo "  RLV_RUNS_DIR=backend/runs-local make dev"
+	@echo "  RLV_DB_PATH=backend/data/local.db make dev"
 	@echo ""
 
 # Install all dependencies
@@ -61,7 +63,7 @@ backend:
 		exit 1; \
 	fi
 	@echo "Starting backend server..."
-	cd backend && RLV_RUNS_DIR="$(RLV_RUNS_DIR)" .venv/bin/uvicorn app.main:app --reload --host "$(BACKEND_HOST)" --port "$(BACKEND_PORT)"
+	cd backend && RLV_RUNS_DIR="$(RLV_RUNS_DIR)" RLV_DB_PATH="$(RLV_DB_PATH)" .venv/bin/uvicorn app.main:app --reload --host "$(BACKEND_HOST)" --port "$(BACKEND_PORT)"
 
 frontend:
 	@echo "Starting frontend server..."

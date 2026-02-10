@@ -459,7 +459,7 @@ Improve dev experience.
 ---
 
 ### Prompt 18 — Optional: background worker (only if needed)
-// NOT STARTED
+// EXECUTED
 
 If in-process training causes responsiveness issues, migrate training/eval to a background worker.
 
@@ -476,7 +476,7 @@ If in-process training causes responsiveness issues, migrate training/eval to a 
 ---
 
 ### Prompt 19 — Deployment: Vercel (frontend) + Fly.io (backend)
-// NOT STARTED
+// EXECUTED
 
 Configure deployment for production.
 
