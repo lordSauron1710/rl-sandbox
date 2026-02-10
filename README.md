@@ -10,10 +10,6 @@ Lightweight RL training and evaluation visualizer with a Next.js dashboard and F
 
 ![RL Sandbox UI](docs/assets/frontend-design-reference.png)
 
-## Star tracker
-
-[![Star History Chart](https://api.star-history.com/svg?repos=lordSauron1710/rl-sandbox&type=Date)](https://star-history.com/#lordSauron1710/rl-sandbox&Date)
-
 ## What it does
 
 - Trains PPO and DQN agents on supported Gymnasium environments.
@@ -166,3 +162,7 @@ make test
 ## License
 
 MIT
+
+## Star tracker
+
+[![Star History Chart](https://api.star-history.com/svg?repos=lordSauron1710/rl-sandbox&type=Date)](https://star-history.com/#lordSauron1710/rl-sandbox&Date)
