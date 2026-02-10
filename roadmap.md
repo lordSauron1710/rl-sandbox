@@ -476,7 +476,7 @@ If in-process training causes responsiveness issues, migrate training/eval to a 
 ---
 
 ### Prompt 19 — Deployment: Vercel (frontend) + Fly.io (backend)
-// NOT STARTED
+// EXECUTED
 
 Configure deployment for production.
 

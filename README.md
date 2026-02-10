@@ -41,16 +41,21 @@ rl-sandbox/
 │   │   ├── storage/       # Run artifact storage
 │   │   ├── training/      # Training/evaluation runners
 │   │   └── main.py
+│   ├── Dockerfile         # Fly.io runtime image
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/app/           # Next app shell/page
 │   ├── src/components/    # Dashboard UI
 │   ├── src/hooks/         # Runtime hooks (training/streaming)
-│   └── src/services/      # API client
+│   ├── src/services/      # API client
+│   └── vercel.json        # Vercel headers/build config
 ├── scripts/
 │   └── dev.sh             # One-command local dev runner
 ├── .env.example           # Shared backend/frontend local env template
-├── docs/assets/           # Reference and screenshot images
+├── fly.toml               # Fly.io backend deployment config
+├── docs/
+│   ├── assets/            # Reference and screenshot images
+│   └── deployment.md      # Deployment guide
 ├── roadmap.md             # Prompt roadmap
 ├── errors.md              # Known issues + latest working fixes
 ├── test-smoke.sh
@@ -71,7 +76,7 @@ rl-sandbox/
 cp .env.example .env
 ```
 
-Update `.env` if you need non-default ports, backend URL, or custom run-artifact location.
+Update `.env` if you need non-default ports, backend URL, or custom run-artifact/DB location.
 
 ### 2) Start backend + frontend with one command
 
@@ -97,6 +102,28 @@ Services:
 - Frontend: `http://127.0.0.1:3000`
 - Backend API: `http://127.0.0.1:8000`
 - Backend docs: `http://127.0.0.1:8000/docs`
+
+## Deployment (Vercel + Fly.io)
+
+- Backend deploy config:
+  - `fly.toml`
+  - `backend/Dockerfile`
+- Frontend deploy config:
+  - `frontend/vercel.json`
+
+Quick path:
+
+1. Deploy backend to Fly.io and create volume `rl_data`.
+2. Set backend env/secrets (`CORS_ORIGINS`, optional `CORS_ORIGIN_REGEX`).
+3. Deploy frontend from `frontend/` on Vercel.
+4. Set Vercel env `NEXT_PUBLIC_API_URL=https://<fly-app>.fly.dev/api/v1`.
+
+Full guide: `docs/deployment.md`
+
+Security note:
+
+- Never commit secrets (`.env`, API keys, tokens).
+- Use Fly/Vercel managed env vars/secrets for sensitive values.
 
 ## Test commands
 
@@ -146,7 +173,10 @@ Use FastAPI docs (`http://localhost:8000/docs`) for full request/response schema
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | Frontend | `http://127.0.0.1:8000/api/v1` | Backend API base URL used by Next.js client code |
 | `RLV_RUNS_DIR` | Backend | `<repo>/backend/runs` | Path for run artifacts; relative values are resolved from repo root by `scripts/dev.sh` |
+| `RLV_DB_PATH` | Backend | `<repo>/backend/data/rl_visualizer.db` | SQLite path; relative values are resolved from repo root by `scripts/dev.sh` |
 | `CORS_ORIGINS` | Backend | Derived from frontend host/port | Comma-separated allowed origins |
+| `CORS_ORIGIN_REGEX` | Backend | unset | Optional regex for dynamic origins (for example Vercel previews) |
+| `FRONTEND_URL` | Backend | unset | Optional single frontend origin appended to CORS list |
 | `BACKEND_HOST` | Dev runner | `127.0.0.1` | Host for Uvicorn bind |
 | `BACKEND_PORT` | Dev runner | `8000` | Port for Uvicorn bind |
 | `FRONTEND_HOST` | Dev runner | `127.0.0.1` | Host for Next.js dev server |
@@ -164,17 +194,21 @@ BACKEND_PORT=8010 FRONTEND_PORT=3010 NEXT_PUBLIC_API_URL=http://127.0.0.1:8010/a
 - `Frontend port ... is already in use`: stop old process or run with `FRONTEND_PORT=<new-port>`.
 - Frontend calls wrong backend: set `NEXT_PUBLIC_API_URL` and restart `make dev`.
 - Artifacts not written where expected: set `RLV_RUNS_DIR`, then run `make dev-check`.
+- DB path not applied as expected: set `RLV_DB_PATH`, then run `make dev-check`.
+- Browser CORS failures in production: verify `CORS_ORIGINS` matches your Vercel domain.
 - Validate setup without launching servers: `make dev-check`.
 
 ## Documentation map
 
 - `errors.md` — root causes and latest working fixes (read before flow changes).
 - `docs/prompt-18-analysis-and-tests.md` — background queue worker design + edge-case coverage.
+- `docs/prompt-19-analysis-and-tests.md` — deployment integration notes + verification checklist.
+- `docs/deployment.md` — production deployment for Vercel + Fly.io.
 - `docs/assets/frontend-design-reference.png` — latest UI sample.
 
 ## Roadmap status
 
-Prompts 01–18 in `roadmap.md` are executed. Prompt 19 is planned follow-up work.
+Prompts 01–19 in `roadmap.md` are executed.
 
 ## License
 

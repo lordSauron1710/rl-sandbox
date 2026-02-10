@@ -15,12 +15,42 @@ from app.training import get_background_worker, get_training_manager
 
 
 def _get_cors_origins() -> list[str]:
-    """Read CORS origins from env, with safe local defaults."""
-    raw = os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000",
-    )
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    """
+    Read CORS origins from env, with safe local defaults.
+
+    Supports:
+      - CORS_ORIGINS="https://app.example.com,https://preview.example.com"
+      - FRONTEND_URL="https://app.example.com" (appended if not present)
+    """
+    default_origins = "http://localhost:3000,http://127.0.0.1:3000"
+    raw = os.getenv("CORS_ORIGINS", default_origins)
+
+    origins: list[str] = []
+    seen: set[str] = set()
+
+    for value in raw.split(","):
+        origin = value.strip().rstrip("/")
+        if not origin or origin in seen:
+            continue
+        origins.append(origin)
+        seen.add(origin)
+
+    frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+    if frontend_url and frontend_url not in seen:
+        origins.append(frontend_url)
+
+    return origins or default_origins.split(",")
+
+
+def _get_cors_origin_regex() -> str | None:
+    """
+    Optional regex for dynamic origins (e.g. Vercel preview URLs).
+
+    Example:
+      CORS_ORIGIN_REGEX="https://.*\\.vercel\\.app"
+    """
+    raw = os.getenv("CORS_ORIGIN_REGEX", "").strip()
+    return raw or None
 
 
 @asynccontextmanager
@@ -48,6 +78,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_get_cors_origins(),
+    allow_origin_regex=_get_cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
