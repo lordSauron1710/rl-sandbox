@@ -10,6 +10,7 @@ Lightweight RL training + evaluation visualizer built with FastAPI (backend) and
 - Applies training presets (`fast`, `stable`, `high_score`) with server-side bounds validation.
 - Streams live metrics over SSE and live environment frames over WebSocket.
 - Records evaluation runs and serves MP4 artifacts.
+- Queues training/evaluation jobs in SQLite for resilient local background execution.
 - Provides a responsive 3-column dashboard for environment setup, live feed, and logs.
 
 ## Architecture
@@ -128,9 +129,9 @@ Base API: `http://localhost:8000/api/v1`
 | `/environments/{id}/preview` | GET | Get idle preview frame (JPEG) |
 | `/runs/presets` | GET | List preset tables + hyperparameter bounds |
 | `/runs` | POST | Create run |
-| `/runs/{id}/start` | POST | Start training |
+| `/runs/{id}/start` | POST | Queue/start training |
 | `/runs/{id}/stop` | POST | Stop training |
-| `/runs/{id}/evaluate` | POST | Start evaluation |
+| `/runs/{id}/evaluate` | POST | Queue/start evaluation |
 | `/runs/{id}/stream/metrics` | GET (SSE) | Live metrics stream |
 | `/runs/{id}/ws/frames` | WS | Live frame stream |
 | `/runs/{id}/artifacts/*` | GET | Config/metrics/eval artifacts |
@@ -168,11 +169,12 @@ BACKEND_PORT=8010 FRONTEND_PORT=3010 NEXT_PUBLIC_API_URL=http://127.0.0.1:8010/a
 ## Documentation map
 
 - `errors.md` — root causes and latest working fixes (read before flow changes).
+- `docs/prompt-18-analysis-and-tests.md` — background queue worker design + edge-case coverage.
 - `docs/assets/frontend-design-reference.png` — latest UI sample.
 
 ## Roadmap status
 
-Prompts 01–17 in `roadmap.md` are executed. Prompts 18+ are planned follow-up work.
+Prompts 01–18 in `roadmap.md` are executed. Prompt 19 is planned follow-up work.
 
 ## License
 

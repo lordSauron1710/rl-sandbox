@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.database import init_db
 from app.routers import environments_router, runs_router
 from app.streaming import streaming_router
-from app.training import get_training_manager
+from app.training import get_background_worker, get_training_manager
 
 
 def _get_cors_origins() -> list[str]:
@@ -28,9 +28,11 @@ async def lifespan(app: FastAPI):
     """Initialize resources on startup."""
     # Initialize database
     init_db()
+    get_background_worker().start()
     try:
         yield
     finally:
+        get_background_worker().stop()
         # Stop any background workers on shutdown.
         get_training_manager().cleanup()
 

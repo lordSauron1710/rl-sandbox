@@ -236,7 +236,36 @@ Without terminal-status normalization, completed runs did not consistently map t
 
 ---
 
-## 5. Categorisation summary
+## 5. Backend: background queue coordination
+
+### 5.1 Evaluation appeared "done" before worker pickup
+
+**Symptom:** `POST /runs/{id}/evaluate` returned success, but immediate reads of `GET /runs/{id}/evaluate/latest` and latest MP4 returned `404`.
+
+**Root cause:** Evaluation is queued in SQLite and handled asynchronously. The route returned before the worker moved the job out of `queued`, so run status could still be `completed` from prior training when clients immediately checked terminal state.
+
+**Fix (latest, working):** After enqueueing, the route waits briefly for the job to transition out of `queued` (or finish very quickly) before returning. This removes the "started but not actually dequeued yet" race.
+
+**Lesson:** Queue-backed "start" endpoints should not acknowledge running semantics until dequeue handoff is observable.
+
+---
+
+### 5.2 Restart from `stopped` could conflict during cleanup handoff
+
+**Symptom:** `POST /runs/{id}/start` right after a stop/terminal poll sometimes returned `409 conflict` ("already queued or in progress"), and follow-up stop calls could fail with `not_running`.
+
+**Root cause:** We mixed persisted queue state with in-memory manager state. During short cleanup windows, run status could be `stopped` while the previous training thread was still winding down; queued-stop-before-start also left status as `pending` unless explicitly normalized.
+
+**Fix (latest, working):**
+1. When cancelling a queued training job before it starts, immediately set run status to `stopped`.
+2. Do not hard-block enqueue on `manager.is_training`; let the worker own start timing.
+3. In worker execution, if start fails with "already in progress", wait briefly for previous manager cleanup and retry start.
+
+**Lesson:** When bridging durable queue state and ephemeral in-memory executors, handle transitional states explicitly instead of assuming status + thread lifecycle are perfectly synchronized.
+
+---
+
+## 6. Categorisation summary
 
 | Category              | Error / risk                                      | Type        | Where / when                          |
 |-----------------------|----------------------------------------------------|------------|----------------------------------------|
@@ -255,10 +284,12 @@ Without terminal-status normalization, completed runs did not consistently map t
 | Backend / validation  | Algorithm-incompatible hyperparameters accepted     | Schema bug | `POST /runs` override validation         |
 | Backend / API semantics | Duplicate start returns alternate 409 error codes | Race/contract nuance | router vs manager start guards |
 | Backend / progress semantics | Completed runs reported partial or >100% progress | Logic bug | `GET /runs/{id}` progress composition (manager + storage) |
+| Backend / queue timing | Evaluate acknowledged before dequeue handoff       | Ordering bug | `/runs/{id}/evaluate` + worker queue pickup |
+| Backend / queue lifecycle | Stop/start restart conflict during cleanup handoff | Lifecycle race | worker queue vs manager in-memory job teardown |
 
 ---
 
-## 6. How to use this file
+## 7. How to use this file
 
 - **When you fix a bug:** Add a short entry under the right category (or add a category). Include: symptom, root cause, **Fix (latest, working)** with the method that actually works, and one-line lesson. If we tried multiple approaches, document only the one that works now.
 - **When you find a better or working fix for an existing error:** Replace that entry’s Fix section with the new method. Do not keep multiple attempts; one entry = one current, working fix. Keeps the file consistent and authoritative.

@@ -1,6 +1,7 @@
 """
 Run endpoints for RL Gym Visualizer.
 """
+import asyncio
 import json
 import re
 from enum import Enum
@@ -11,12 +12,12 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ConfigDict, ValidationError
 
-from app.db import runs_repository, events_repository
+from app.db import runs_repository, events_repository, jobs_repository
 from app.models.run import RunStatus, EvaluationConfig, EvaluationSummary as EvalSummaryModel
 from app.models.event import EventType
 from app.models.environment import get_environment
 from app.storage.run_storage import RunStorage
-from app.training import get_training_manager
+from app.training import get_background_worker, get_training_manager
 from app.training.presets import (
     ALGORITHM_DEFAULT_PRESET,
     ALGORITHM_HYPERPARAMETER_FIELDS,
@@ -513,6 +514,30 @@ def _resolve_hyperparameters(request: RunCreateRequest) -> tuple[str, dict]:
     return selected_preset, filtered_hyperparameters
 
 
+async def _wait_for_job_dequeue(
+    run_id: str,
+    job_type: str,
+    timeout_seconds: float = 2.0,
+) -> None:
+    """
+    Briefly wait for a queued job to transition out of `queued`.
+
+    This reduces race windows where clients immediately poll run state and
+    incorrectly infer completion before worker pickup.
+    """
+    deadline = asyncio.get_running_loop().time() + max(0.0, timeout_seconds)
+    while asyncio.get_running_loop().time() < deadline:
+        active = jobs_repository.get_active_job_for_run(
+            run_id=run_id,
+            job_type=job_type,
+        )
+        if not active:
+            return
+        if active["status"] != jobs_repository.JOB_STATUS_QUEUED:
+            return
+        await asyncio.sleep(0.05)
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -657,8 +682,8 @@ async def start_training(run_id: str) -> MessageResponse:
     """
     Start training for a pending or stopped run.
     
-    Training runs in a background thread, allowing the API to remain responsive.
-    Use the /runs/{id}/stop endpoint to interrupt training.
+    Training is enqueued and executed by the local background worker,
+    allowing the API to remain responsive. Use /runs/{id}/stop to interrupt.
     """
     run_dict = runs_repository.get_run(run_id)
     if not run_dict:
@@ -672,7 +697,19 @@ async def start_training(run_id: str) -> MessageResponse:
                 }
             }
         )
-    
+    worker = get_background_worker()
+    if worker.has_active_training_job(run_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "conflict",
+                    "message": "Training already queued or in progress for this run",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+
     # Check valid starting states
     valid_states = [RunStatus.PENDING.value, RunStatus.STOPPED.value]
     if run_dict["status"] not in valid_states:
@@ -689,10 +726,9 @@ async def start_training(run_id: str) -> MessageResponse:
                 }
             }
         )
-    
-    # Start training via manager
-    manager = get_training_manager()
-    result = manager.start_training(run_id)
+
+    # Queue training via background worker
+    result = worker.enqueue_training(run_id)
     
     if not result["success"]:
         raise HTTPException(
@@ -705,7 +741,11 @@ async def start_training(run_id: str) -> MessageResponse:
                 }
             }
         )
-    
+    await _wait_for_job_dequeue(
+        run_id=run_id,
+        job_type=jobs_repository.JOB_TYPE_TRAINING,
+    )
+
     return MessageResponse(
         id=run_id,
         status="training",
@@ -718,8 +758,8 @@ async def stop_training(run_id: str) -> MessageResponse:
     """
     Stop a running training session.
     
-    Sends a stop signal to the training thread. Training will stop gracefully
-    after the current environment step completes.
+    Sends a stop signal to queued/running training. If the run is active,
+    training stops gracefully after the current environment step completes.
     """
     run_dict = runs_repository.get_run(run_id)
     if not run_dict:
@@ -734,21 +774,26 @@ async def stop_training(run_id: str) -> MessageResponse:
             }
         )
     
-    if run_dict["status"] != RunStatus.TRAINING.value:
+    worker = get_background_worker()
+    has_active_job = worker.has_active_training_job(run_id)
+
+    if run_dict["status"] != RunStatus.TRAINING.value and not has_active_job:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error": {
                     "code": "not_running",
                     "message": "Run is not currently training",
-                    "details": {"current_status": run_dict["status"]}
+                    "details": {
+                        "current_status": run_dict["status"],
+                        "has_queued_job": has_active_job,
+                    }
                 }
             }
         )
     
-    # Stop training via manager
-    manager = get_training_manager()
-    result = manager.stop_training(run_id)
+    # Stop queued/running training via worker (falls back to manager)
+    result = worker.request_training_stop(run_id)
     
     if not result["success"]:
         raise HTTPException(
@@ -762,9 +807,10 @@ async def stop_training(run_id: str) -> MessageResponse:
             }
         )
     
+    response_status = "stopped" if "cancelled before start" in result["message"].lower() else "stopping"
     return MessageResponse(
         id=run_id,
-        status="stopping",
+        status=response_status,
         message=result["message"]
     )
 
@@ -1106,8 +1152,8 @@ async def start_evaluation(
     Runs N evaluation episodes using the trained model, records an MP4 video,
     and streams live frames during evaluation.
     
-    The evaluation runs in a background thread. Use the WebSocket endpoint
-    /runs/{id}/ws/frames to receive live frames during evaluation.
+    The evaluation is enqueued and executed by the local background worker.
+    Use /runs/{id}/ws/frames to receive live frames during evaluation.
     
     **Requirements:**
     - Run must be in 'completed' or 'stopped' status (must have trained model)
@@ -1131,6 +1177,19 @@ async def start_evaluation(
             }
         )
     
+    worker = get_background_worker()
+    if worker.has_active_evaluation_job(run_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "invalid_status",
+                    "message": "Evaluation already queued or in progress for this run",
+                    "details": {"run_id": run_id}
+                }
+            }
+        )
+
     # Check valid states for evaluation
     valid_states = [RunStatus.COMPLETED.value, RunStatus.STOPPED.value]
     if run_dict["status"] not in valid_states:
@@ -1147,10 +1206,9 @@ async def start_evaluation(
                 }
             }
         )
-    
-    # Start evaluation via manager
-    manager = get_training_manager()
-    result = manager.start_evaluation(
+
+    # Queue evaluation via background worker
+    result = worker.enqueue_evaluation(
         run_id=run_id,
         num_episodes=request.num_episodes,
         stream_frames=request.stream_frames,
@@ -1168,7 +1226,11 @@ async def start_evaluation(
                 }
             }
         )
-    
+    await _wait_for_job_dequeue(
+        run_id=run_id,
+        job_type=jobs_repository.JOB_TYPE_EVALUATION,
+    )
+
     return MessageResponse(
         id=run_id,
         status="evaluating",
@@ -1181,8 +1243,8 @@ async def stop_evaluation(run_id: str) -> MessageResponse:
     """
     Stop a running evaluation.
     
-    Sends a stop signal to the evaluation thread. Evaluation will stop gracefully
-    after the current episode completes.
+    Sends a stop signal to queued/running evaluation. If the run is active,
+    evaluation stops gracefully after the current episode completes.
     """
     run_dict = runs_repository.get_run(run_id)
     if not run_dict:
@@ -1197,21 +1259,26 @@ async def stop_evaluation(run_id: str) -> MessageResponse:
             }
         )
     
-    if run_dict["status"] != RunStatus.EVALUATING.value:
+    worker = get_background_worker()
+    has_active_job = worker.has_active_evaluation_job(run_id)
+
+    if run_dict["status"] != RunStatus.EVALUATING.value and not has_active_job:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error": {
                     "code": "not_evaluating",
                     "message": "Run is not currently being evaluated",
-                    "details": {"current_status": run_dict["status"]}
+                    "details": {
+                        "current_status": run_dict["status"],
+                        "has_queued_job": has_active_job,
+                    }
                 }
             }
         )
     
-    # Stop evaluation via manager
-    manager = get_training_manager()
-    result = manager.stop_evaluation(run_id)
+    # Stop queued/running evaluation via worker (falls back to manager)
+    result = worker.request_evaluation_stop(run_id)
     
     if not result["success"]:
         raise HTTPException(
@@ -1225,9 +1292,10 @@ async def stop_evaluation(run_id: str) -> MessageResponse:
             }
         )
     
+    response_status = "stopped" if "cancelled before start" in result["message"].lower() else "stopping"
     return MessageResponse(
         id=run_id,
-        status="stopping",
+        status=response_status,
         message=result["message"]
     )
 
