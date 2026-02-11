@@ -207,7 +207,10 @@ function PlaceholderVisualization({
       {hasSelectedEnv && previewFailed && (
         <>
           <p className="text-xs uppercase tracking-wider text-amber-400/90">Preview unavailable</p>
-          <p className="text-[10px] mt-1">Start the backend to see previews: run <code className="bg-white/10 px-1 rounded">make backend</code> in a terminal</p>
+          <p className="text-[10px] mt-1">
+            Start the backend with <code className="bg-white/10 px-1 rounded">make backend</code>, or run the full app locally with{' '}
+            <code className="bg-white/10 px-1 rounded">make install && make dev</code>.
+          </p>
         </>
       )}
       {playbackFailed && (

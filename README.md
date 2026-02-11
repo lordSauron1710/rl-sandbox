@@ -2,6 +2,9 @@
 
 Lightweight RL training and evaluation visualizer with a Next.js dashboard and FastAPI backend.
 
+> **Important:** The Vercel-hosted version is a **frontend demo only**, not the full working app.  
+> To use training, evaluation, and live backend streams end-to-end, run the project locally (`make install && make dev`) or connect to a deployed backend.
+
 [![CI](https://github.com/lordSauron1710/rl-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/lordSauron1710/rl-sandbox/actions/workflows/ci.yml)
 [![Stars](https://img.shields.io/github/stars/lordSauron1710/rl-sandbox?style=flat)](https://github.com/lordSauron1710/rl-sandbox/stargazers)
 [![Forks](https://img.shields.io/github/forks/lordSauron1710/rl-sandbox?style=flat)](https://github.com/lordSauron1710/rl-sandbox/network/members)
@@ -16,13 +19,13 @@ Lightweight RL training and evaluation visualizer with a Next.js dashboard and F
 - Streams live metrics (SSE) and frames (WebSocket) to a single-page dashboard.
 - Runs evaluation episodes, records MP4 artifacts, and serves latest results.
 - Persists run metadata in SQLite and artifacts on disk.
-- Supports production split deployment: Vercel frontend + Fly.io backend.
+- Supports a frontend-only Vercel demo plus a full local run mode for training/evaluation.
 
 ## Architecture
 
 ```text
 Frontend (Next.js)  <---- REST / SSE / WS ---->  Backend (FastAPI + SB3 + Gymnasium)
-Vercel                                       Fly.io (long-running worker + persistence)
+Vercel demo or local frontend                     local or hosted long-running backend
 ```
 
 ## Supported environments and features
@@ -97,7 +100,10 @@ rl-sandbox/
 ## Quick start
 
 ```bash
+git clone https://github.com/lordSauron1710/rl-sandbox.git
+cd rl-sandbox
 cp .env.example .env
+make install
 make dev
 ```
 
@@ -106,6 +112,15 @@ Local URLs:
 - Frontend: `http://127.0.0.1:3000`
 - Backend API: `http://127.0.0.1:8000/api/v1`
 - Backend docs: `http://127.0.0.1:8000/docs`
+
+## Frontend-only demo (Vercel)
+
+You can deploy only `frontend/` to Vercel as a UI/demo showcase.
+
+- This deployment is explicitly a **frontend demo**, not the full working app.
+- In this mode, training/evaluation is not fully functional without a reachable backend.
+- For full functionality, run the app locally with the quick-start commands above.
+- Browser security prevents an HTTPS-hosted frontend from reliably calling a local HTTP backend.
 
 Production deployment guide:
 
@@ -151,7 +166,7 @@ make test
 
 ## Documentation map
 
-- `docs/deployment.md`: production deployment on Vercel + Fly.io
+- `docs/deployment.md`: frontend-only demo and full split deployment options
 - `errors.md`: latest known issues and fixes
 - `roadmap.md`: implementation roadmap and prompt status
 

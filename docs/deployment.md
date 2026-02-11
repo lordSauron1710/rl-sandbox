@@ -5,6 +5,20 @@ This project is deployed as two services:
 - Frontend: Vercel (`frontend/`)
 - Backend: Fly.io (`backend/`)
 
+## 0) Frontend-only demo deployment (Vercel)
+
+If you only want a no-cost UI/demo deployment:
+
+1. Import this repository into Vercel.
+2. Set the project root directory to `frontend`.
+3. Deploy.
+
+Notes:
+
+- This mode is a frontend showcase only.
+- Training/evaluation requires a reachable backend.
+- Recommend users run the full app locally (`make install && make dev`) for end-to-end functionality.
+
 ## 1) Backend deployment (Fly.io)
 
 ### Prerequisites

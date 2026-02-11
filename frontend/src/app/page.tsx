@@ -872,7 +872,9 @@ export default function Home() {
       {environmentsError && (
         <div className="bg-amber-500/15 border-b border-amber-500/40 px-4 py-2 flex items-center justify-between gap-4">
           <p className="text-sm text-amber-800">
-            <span className="font-medium">Backend not reachable.</span> Start it with <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-xs">make backend</code> so previews and training work.
+            <span className="font-medium">Backend not reachable.</span> If you are running locally, start it with{' '}
+            <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-xs">make backend</code>. If you are on a hosted demo, run the full app locally with{' '}
+            <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-xs">make install && make dev</code>.
           </p>
           <button
             type="button"
