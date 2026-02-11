@@ -4,6 +4,7 @@ Lightweight RL training and evaluation visualizer with a Next.js dashboard and F
 
 > **Important:** The Vercel-hosted version is a **frontend demo only**, not the full working app.  
 > To use training, evaluation, and live backend streams end-to-end, run the project locally (`make install && make dev`) or connect to a deployed backend.
+> Live frontend demo: [https://rl-sandbox-three.vercel.app/](https://rl-sandbox-three.vercel.app/)
 
 [![CI](https://github.com/lordSauron1710/rl-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/lordSauron1710/rl-sandbox/actions/workflows/ci.yml)
 [![Stars](https://img.shields.io/github/stars/lordSauron1710/rl-sandbox?style=flat)](https://github.com/lordSauron1710/rl-sandbox/stargazers)
@@ -117,6 +118,7 @@ Local URLs:
 
 You can deploy only `frontend/` to Vercel as a UI/demo showcase.
 
+- Live demo: [https://rl-sandbox-three.vercel.app/](https://rl-sandbox-three.vercel.app/)
 - This deployment is explicitly a **frontend demo**, not the full working app.
 - In this mode, training/evaluation is not fully functional without a reachable backend.
 - For full functionality, run the app locally with the quick-start commands above.
