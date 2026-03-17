@@ -19,6 +19,8 @@ This repo is a split web app:
 - Keep interactive API docs disabled in production unless the deployment is private/admin-only.
 - Set strict `CORS_ORIGINS` and/or `FRONTEND_URL`.
 - Set `TRUSTED_HOSTS` for public deployments.
+- For public self-hosted deployments, set `RLV_ACCESS_TOKEN` unless the backend
+  is otherwise network-restricted.
 - Terminate TLS at the edge or proxy; do not expose plain HTTP to the public internet.
 - Deploy the backend as a single stateful instance unless the queue/pubsub architecture is redesigned. Current training workers and streams are process-local.
 - Public internet exposure of unauthenticated training/evaluation endpoints is not acceptable without an additional control such as auth, a private network boundary, or a trusted reverse proxy.

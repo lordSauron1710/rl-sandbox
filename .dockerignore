@@ -1,0 +1,8 @@
+# Keep backend image builds small and avoid sending local state to Docker.
+*
+!backend/
+backend/*
+!backend/Dockerfile
+!backend/requirements.txt
+!backend/app/
+!backend/app/**

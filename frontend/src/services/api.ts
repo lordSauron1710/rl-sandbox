@@ -5,13 +5,37 @@
 // API base URL - defaults to localhost:8000 for development
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 
+export class ApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    credentials: 'include',
+  })
+}
+
 async function getErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const error = await response.json()
-    return error.error?.message || fallback
+    return error.error?.message || error.detail?.error?.message || fallback
   } catch {
     return fallback
   }
+}
+
+async function assertOk(response: Response, fallback: string): Promise<Response> {
+  if (response.ok) {
+    return response
+  }
+  throw new ApiError(await getErrorMessage(response, fallback), response.status)
 }
 
 /**
@@ -137,14 +161,45 @@ export interface ApiEvent {
   metadata?: Record<string, unknown> | null
 }
 
+export interface SessionStatus {
+  access_control_enabled: boolean
+  authenticated: boolean
+}
+
+export async function getSessionStatus(): Promise<SessionStatus> {
+  const response = await apiFetch(`${API_BASE_URL}/auth/session`, {
+    cache: 'no-store',
+  })
+  await assertOk(response, `Failed to fetch session status: ${response.statusText}`)
+  return response.json()
+}
+
+export async function createSession(token: string): Promise<SessionStatus> {
+  const response = await apiFetch(`${API_BASE_URL}/auth/session`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ token }),
+  })
+  await assertOk(response, `Failed to create session: ${response.statusText}`)
+  return response.json()
+}
+
+export async function deleteSession(): Promise<SessionStatus> {
+  const response = await apiFetch(`${API_BASE_URL}/auth/session`, {
+    method: 'DELETE',
+  })
+  await assertOk(response, `Failed to delete session: ${response.statusText}`)
+  return response.json()
+}
+
 /**
  * Fetch all environments from the backend
  */
 export async function fetchEnvironments(): Promise<ApiEnvironment[]> {
-  const response = await fetch(`${API_BASE_URL}/environments`)
-  if (!response.ok) {
-    throw new Error(`Failed to fetch environments: ${response.statusText}`)
-  }
+  const response = await apiFetch(`${API_BASE_URL}/environments`)
+  await assertOk(response, `Failed to fetch environments: ${response.statusText}`)
   const data = await response.json()
   return data.environments
 }
@@ -156,14 +211,10 @@ export async function fetchRunPresets(
   algorithm?: AlgorithmName
 ): Promise<AlgorithmPresetTable[]> {
   const query = algorithm ? `?algorithm=${algorithm}` : ''
-  const response = await fetch(`${API_BASE_URL}/runs/presets${query}`, {
+  const response = await apiFetch(`${API_BASE_URL}/runs/presets${query}`, {
     cache: 'no-store',
   })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to fetch presets: ${response.statusText}`)
-    )
-  }
+  await assertOk(response, `Failed to fetch presets: ${response.statusText}`)
   const data = await response.json()
   return data.algorithms
 }
@@ -172,18 +223,14 @@ export async function fetchRunPresets(
  * Create a new run
  */
 export async function createRun(config: RunConfig): Promise<ApiRun> {
-  const response = await fetch(`${API_BASE_URL}/runs`, {
+  const response = await apiFetch(`${API_BASE_URL}/runs`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(config),
   })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to create run: ${response.statusText}`)
-    )
-  }
+  await assertOk(response, `Failed to create run: ${response.statusText}`)
   return response.json()
 }
 
@@ -191,14 +238,10 @@ export async function createRun(config: RunConfig): Promise<ApiRun> {
  * Start training for a run
  */
 export async function startTraining(runId: string): Promise<{ id: string; status: string; message: string }> {
-  const response = await fetch(`${API_BASE_URL}/runs/${runId}/start`, {
+  const response = await apiFetch(`${API_BASE_URL}/runs/${runId}/start`, {
     method: 'POST',
   })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to start training: ${response.statusText}`)
-    )
-  }
+  await assertOk(response, `Failed to start training: ${response.statusText}`)
   return response.json()
 }
 
@@ -206,14 +249,10 @@ export async function startTraining(runId: string): Promise<{ id: string; status
  * Stop training for a run
  */
 export async function stopTraining(runId: string): Promise<{ id: string; status: string; message: string }> {
-  const response = await fetch(`${API_BASE_URL}/runs/${runId}/stop`, {
+  const response = await apiFetch(`${API_BASE_URL}/runs/${runId}/stop`, {
     method: 'POST',
   })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to stop training: ${response.statusText}`)
-    )
-  }
+  await assertOk(response, `Failed to stop training: ${response.statusText}`)
   return response.json()
 }
 
@@ -225,7 +264,7 @@ export async function triggerEvaluation(
   nEpisodes: number = 10,
   streamFrames: boolean = true
 ): Promise<{ id: string; status: string; message: string }> {
-  const response = await fetch(`${API_BASE_URL}/runs/${runId}/evaluate`, {
+  const response = await apiFetch(`${API_BASE_URL}/runs/${runId}/evaluate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -236,11 +275,7 @@ export async function triggerEvaluation(
       target_fps: 15,
     }),
   })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to trigger evaluation: ${response.statusText}`)
-    )
-  }
+  await assertOk(response, `Failed to trigger evaluation: ${response.statusText}`)
   return response.json()
 }
 
@@ -248,14 +283,10 @@ export async function triggerEvaluation(
  * Stop evaluation for a run
  */
 export async function stopEvaluation(runId: string): Promise<{ id: string; status: string; message: string }> {
-  const response = await fetch(`${API_BASE_URL}/runs/${runId}/evaluate/stop`, {
+  const response = await apiFetch(`${API_BASE_URL}/runs/${runId}/evaluate/stop`, {
     method: 'POST',
   })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to stop evaluation: ${response.statusText}`)
-    )
-  }
+  await assertOk(response, `Failed to stop evaluation: ${response.statusText}`)
   return response.json()
 }
 
@@ -263,14 +294,10 @@ export async function stopEvaluation(runId: string): Promise<{ id: string; statu
  * Get active evaluation progress for a run
  */
 export async function getEvaluationProgress(runId: string): Promise<EvaluationProgress> {
-  const response = await fetch(`${API_BASE_URL}/runs/${runId}/evaluate/progress`, {
+  const response = await apiFetch(`${API_BASE_URL}/runs/${runId}/evaluate/progress`, {
     cache: 'no-store',
   })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to fetch evaluation progress: ${response.statusText}`)
-    )
-  }
+  await assertOk(response, `Failed to fetch evaluation progress: ${response.statusText}`)
   return response.json()
 }
 
@@ -278,17 +305,10 @@ export async function getEvaluationProgress(runId: string): Promise<EvaluationPr
  * Get latest evaluation summary for a run
  */
 export async function getLatestEvaluation(runId: string): Promise<EvaluationSummary> {
-  const response = await fetch(`${API_BASE_URL}/runs/${runId}/evaluate/latest`, {
+  const response = await apiFetch(`${API_BASE_URL}/runs/${runId}/evaluate/latest`, {
     cache: 'no-store',
   })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(
-        response,
-        `Failed to fetch evaluation summary: ${response.statusText}`
-      )
-    )
-  }
+  await assertOk(response, `Failed to fetch evaluation summary: ${response.statusText}`)
   return response.json()
 }
 
@@ -296,14 +316,10 @@ export async function getLatestEvaluation(runId: string): Promise<EvaluationSumm
  * Get run details
  */
 export async function getRun(runId: string): Promise<ApiRun> {
-  const response = await fetch(`${API_BASE_URL}/runs/${runId}`, {
+  const response = await apiFetch(`${API_BASE_URL}/runs/${runId}`, {
     cache: 'no-store',
   })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to fetch run: ${response.statusText}`)
-    )
-  }
+  await assertOk(response, `Failed to fetch run: ${response.statusText}`)
   return response.json()
 }
 
@@ -323,12 +339,8 @@ export async function listRuns(params?: {
   if (params?.offset) searchParams.set('offset', params.offset.toString())
 
   const url = `${API_BASE_URL}/runs${searchParams.toString() ? `?${searchParams}` : ''}`
-  const response = await fetch(url, { cache: 'no-store' })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to list runs: ${response.statusText}`)
-    )
-  }
+  const response = await apiFetch(url, { cache: 'no-store' })
+  await assertOk(response, `Failed to list runs: ${response.statusText}`)
   return response.json()
 }
 
@@ -351,12 +363,8 @@ export async function listRunEvents(
   const url = `${API_BASE_URL}/runs/${runId}/events${
     searchParams.toString() ? `?${searchParams}` : ''
   }`
-  const response = await fetch(url, { cache: 'no-store' })
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, `Failed to list events: ${response.statusText}`)
-    )
-  }
+  const response = await apiFetch(url, { cache: 'no-store' })
+  await assertOk(response, `Failed to list events: ${response.statusText}`)
   return response.json()
 }
 

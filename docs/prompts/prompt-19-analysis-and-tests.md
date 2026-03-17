@@ -2,21 +2,31 @@
 
 ## Scope
 
-Prompt 19 required production deployment setup for:
+Prompt 19 originally required production deployment setup for:
 
 - Frontend on Vercel
 - Backend on Fly.io
 - CORS + persistence + health checks
 - Deployment documentation + security notes
 
+The current repo baseline has since been normalized to:
+
+- Frontend on Vercel
+- Backend on your own machine using `deploy/selfhosted/`
+- No checked-in Fly deployment assets; Fly remains historical context only
+
 ## What was added
 
-- `backend/Dockerfile` for Fly deployment.
-- `fly.toml` with:
-  - backend build target
-  - `/data` volume mount
+- `backend/Dockerfile` for containerized backend deployment.
+- `deploy/selfhosted/docker-compose.yml` with:
+  - backend + Caddy services
+  - `/data` volume for SQLite + artifacts
   - health check on `/health`
-  - default runtime env (`RLV_DB_PATH`, `RLV_RUNS_DIR`)
+  - production env wiring (`RLV_DB_PATH`, `RLV_RUNS_DIR`, CORS, trusted hosts, deployment access token)
+- `deploy/selfhosted/Caddyfile` for automatic HTTPS reverse proxying.
+- `deploy/selfhosted/backend.env.example` for production backend config.
+- `scripts/selfhosted-backend.sh` and matching `make selfhosted-backend-*` commands for config, API URL output, backup, and restore.
+- `backend/app/auth.py` + `backend/app/routers/auth.py` for optional deployment access control.
 - `frontend/vercel.json` with security/cache headers.
 - `backend/app/db/database.py` now supports `RLV_DB_PATH`.
 - `backend/app/main.py` CORS improvements:
@@ -46,6 +56,9 @@ Prompt 19 required production deployment setup for:
   - `cd frontend && npm run build`
 - Validate local env parsing:
   - `make dev-check`
+- Validate self-hosted Compose config:
+  - `bash scripts/selfhosted-backend.sh config`
 - Manual deploy smoke:
-  - Fly health endpoint returns 200
+  - `https://<your-api-domain>/health` returns 200
+  - deployed frontend prompts for the deployment token and establishes a session
   - Vercel frontend can call `GET /api/v1/environments` through configured backend URL

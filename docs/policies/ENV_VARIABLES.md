@@ -11,6 +11,7 @@
 
 - `APP_ENV`: backend runtime mode (`development` or `production`)
 - `NEXT_PUBLIC_API_URL`: browser-safe backend API base URL
+- `RLV_ACCESS_TOKEN`: deployment access secret for the self-hosted backend
 - `CORS_ORIGINS`: explicit browser origins allowed to call the backend
 - `FRONTEND_URL`: optional single frontend origin appended to allowed origins
 - `CORS_ORIGIN_REGEX`: optional regex for preview origins

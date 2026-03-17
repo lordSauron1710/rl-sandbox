@@ -475,6 +475,12 @@ If in-process training causes responsiveness issues, migrate training/eval to a 
 
 ---
 
+> Historical note: Prompt 19 reflects the original Fly.io deployment target. The
+> current repo baseline for full deployment is a Vercel frontend plus the
+> self-hosted backend stack under `deploy/selfhosted/`. Fly is retained only as
+> historical context in this roadmap prompt; no active Fly deployment assets are
+> kept in the repo.
+
 ### Prompt 19 — Deployment: Vercel (frontend) + Fly.io (backend)
 // EXECUTED
 

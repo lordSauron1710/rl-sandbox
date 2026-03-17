@@ -11,7 +11,10 @@
 - State-changing endpoints must not rely on CORS for protection.
 - WebSocket endpoints must validate browser `Origin` separately from CORS.
 - Keep interactive docs and schema exposure disabled in public production unless intentionally protected.
-- If the backend is exposed publicly without user auth, place it behind a trusted network boundary or proxy control before allowing training/evaluation actions.
+- If the backend is exposed publicly, require either a server-enforced auth layer
+  or a trusted network boundary before allowing training/evaluation actions.
+- Cookie-authenticated unsafe requests must validate `Origin` against the
+  allowed frontend origin set.
 
 ## File And Stream Safety
 

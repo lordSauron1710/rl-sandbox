@@ -4,6 +4,7 @@
 
 - Added a policy-document workflow under `docs/policies/` so future auth, API, deployment, and env changes have explicit guardrails.
 - Hardened the backend production posture with optional trusted hosts, production-disabled API docs by default, baseline security headers, and WebSocket origin validation.
+- Added an optional deployment access-token flow for public self-hosted backends, using an HttpOnly session cookie for browser access.
 - Upgraded the frontend Next.js line and backend Pillow floor to patched releases.
 
 ## Resolved Findings
@@ -36,6 +37,13 @@
 - **Issue:** Pillow could resolve to a vulnerable line.
 - **Fix:** Raised the minimum version to a patched release.
 
+### SBP-005
+
+- **Severity:** High
+- **Location:** `backend/app/auth.py`, `backend/app/main.py`, `frontend/src/app/page.tsx`
+- **Issue:** Public split deployments had no server-enforced access layer for training/evaluation routes.
+- **Fix:** Added an optional deployment access token, server-side session exchange, cookie/origin enforcement, and a frontend unlock flow that does not embed secrets in the bundle.
+
 ## Remaining Risk
 
-- v0 still has unauthenticated compute endpoints by design. This is acceptable for local development or private deployments, but a public internet deployment should add an additional access control layer or network boundary before exposing training/evaluation actions.
+- v0 still does not have multi-user identities, per-user authorization, rate limiting, or quotas. The deployment access token is appropriate for personal/self-managed use, but broader public exposure still needs a stronger auth and abuse-control layer.
