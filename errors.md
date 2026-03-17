@@ -318,6 +318,18 @@ Without terminal-status normalization, completed runs did not consistently map t
 
 ---
 
+### 6.4 Production frontend CSP blocked inline layout styles
+
+**Symptom:** The deployed app rendered with collapsed columns and oversized blank areas even though development mode looked normal.
+
+**Root cause:** We moved the frontend to a nonce-based CSP path, but the app still depends on current Next.js inline bootstrap behavior and React `style={...}` attributes for layout and sizing (for example the main grid column template and live-feed stage dimensions). Production blocked those runtime styles, so the page lost key layout rules.
+
+**Fix (latest, working):** Revert to a static frontend CSP that allows the current inline script/style behavior (`'unsafe-inline'`) until the app is refactored away from inline bootstrap and inline layout styles. Do not ship the nonce-based middleware path while the UI still relies on those inline behaviors.
+
+**Lesson:** Tightening CSP must match the actual rendering model. If the app still relies on inline scripts or inline style attributes, a nonce-based CSP migration needs the rendering model refactored first, not just the header swapped.
+
+---
+
 ## 7. Categorisation summary
 
 | Category              | Error / risk                                      | Type        | Where / when                          |
@@ -341,6 +353,7 @@ Without terminal-status normalization, completed runs did not consistently map t
 | Backend / queue timing | Evaluate acknowledged before dequeue handoff       | Ordering bug | `/runs/{id}/evaluate` + worker queue pickup |
 | Backend / queue lifecycle | Stop/start restart conflict during cleanup handoff | Lifecycle race | worker queue vs manager in-memory job teardown |
 | Security / deployment | Production backend booted open with no token       | Guardrail bug | production startup auth posture |
+| Security / frontend CSP | Production CSP blocked inline layout styles      | Guardrail bug | production frontend layout rendering |
 
 ---
 
