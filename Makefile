@@ -10,7 +10,7 @@ NEXT_PUBLIC_API_URL ?= http://$(BACKEND_HOST):$(BACKEND_PORT)/api/v1
 RLV_RUNS_DIR ?= $(CURDIR)/backend/runs
 RLV_DB_PATH ?= $(CURDIR)/backend/data/rl_visualizer.db
 
-.PHONY: help install install-backend install-frontend dev dev-check backend frontend test-smoke test clean
+.PHONY: help install install-backend install-frontend dev dev-check backend frontend test-smoke test selfhosted-backend-api-url selfhosted-backend-config selfhosted-backend-up selfhosted-backend-down selfhosted-backend-logs selfhosted-backend-ps selfhosted-backend-backup selfhosted-backend-restore clean
 
 help:
 	@echo "RL Gym Visualizer - Development Commands"
@@ -23,6 +23,14 @@ help:
 	@echo "  make frontend   Start only the frontend server"
 	@echo "  make test-smoke Run minimal backend smoke test (CI; requires backend up)"
 	@echo "  make test       Run full backend test (requires backend up)"
+	@echo "  make selfhosted-backend-api-url Print the NEXT_PUBLIC_API_URL value for Vercel"
+	@echo "  make selfhosted-backend-config Validate self-hosted backend Compose config"
+	@echo "  make selfhosted-backend-up     Build and start the self-hosted backend stack"
+	@echo "  make selfhosted-backend-down   Stop the self-hosted backend stack"
+	@echo "  make selfhosted-backend-logs   Follow self-hosted backend logs"
+	@echo "  make selfhosted-backend-ps     Show self-hosted backend service status"
+	@echo "  make selfhosted-backend-backup Export the self-hosted backend data volume"
+	@echo "  make selfhosted-backend-restore BACKUP=/abs/path.tar.gz Restore the self-hosted data volume"
 	@echo "  make clean      Remove generated files and caches"
 	@echo ""
 	@echo "Common overrides:"
@@ -77,6 +85,34 @@ test-smoke:
 test:
 	@echo "Running full backend test..."
 	@bash test-comprehensive.sh
+
+selfhosted-backend-api-url:
+	@bash scripts/selfhosted-backend.sh api-url
+
+selfhosted-backend-config:
+	@bash scripts/selfhosted-backend.sh config
+
+selfhosted-backend-up:
+	@bash scripts/selfhosted-backend.sh up
+
+selfhosted-backend-down:
+	@bash scripts/selfhosted-backend.sh down
+
+selfhosted-backend-logs:
+	@bash scripts/selfhosted-backend.sh logs
+
+selfhosted-backend-ps:
+	@bash scripts/selfhosted-backend.sh ps
+
+selfhosted-backend-backup:
+	@bash scripts/selfhosted-backend.sh backup
+
+selfhosted-backend-restore:
+	@if [ -z "$(BACKUP)" ]; then \
+		echo "Usage: make selfhosted-backend-restore BACKUP=/absolute/path/to/backup.tar.gz"; \
+		exit 1; \
+	fi
+	@bash scripts/selfhosted-backend.sh restore "$(BACKUP)"
 
 # Cleanup
 clean:

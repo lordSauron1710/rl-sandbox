@@ -1,16 +1,31 @@
-# Deployment Guide (Vercel Frontend + Stateful Backend)
+# Deployment Guide (Vercel Frontend + Self-Hosted Backend)
 
-This project is deployed as two services:
+This repo now includes a concrete full-app deployment path with:
 
-- Frontend: Vercel (`frontend/`)
-- Backend: one stateful FastAPI service (`backend/`)
+- Frontend on Vercel (`frontend/`)
+- Backend on your own machine using Docker Compose + Caddy (`deploy/selfhosted/`)
 
-The backend can run on Fly.io, a VM, or a self-hosted Docker host. Do not rely
-on any provider's free-tier marketing as part of the security model.
+This keeps platform cost at `$0/month` if you already have a machine to leave on.
 
-## 0) Frontend-only demo deployment (Vercel)
+## 0) What this repo automates
 
-If you only want a no-cost UI/demo deployment:
+The repo fills the app-side deployment gap with:
+
+- `deploy/selfhosted/docker-compose.yml`: backend + reverse proxy stack
+- `deploy/selfhosted/Caddyfile`: HTTPS reverse proxy for the backend
+- `deploy/selfhosted/backend.env.example`: production env template
+- `scripts/selfhosted-backend.sh`: wrapper for `docker compose`, Vercel API URL output, and `/data` backup/restore
+- `make selfhosted-backend-*`: convenience commands
+
+The repo cannot automate these external prerequisites for you:
+
+- an always-on machine you control
+- a public hostname that resolves to that machine
+- router / firewall access for ports `80` and `443`
+
+## 1) Frontend-only demo deployment (Vercel)
+
+If you only want the no-cost UI demo:
 
 1. Import this repository into Vercel.
 2. Set the project root directory to `frontend`.
@@ -20,103 +35,148 @@ Notes:
 
 - This mode is a frontend showcase only.
 - Training/evaluation requires a reachable backend.
-- Recommend users run the full app locally (`make install && make dev`) for end-to-end functionality.
+- Browser security prevents an HTTPS-hosted frontend from calling a local HTTP backend.
 
-## 1) Backend deployment (Fly.io)
+## 2) Full app deployment (own machine + Vercel)
 
 ### Prerequisites
 
-- Install Fly CLI: `flyctl`
-- Authenticate: `fly auth login`
+- an always-on Linux/macOS machine or home server
+- Docker Engine with Compose v2
+- a public hostname for the backend, for example `api.example.com`
+- ports `80` and `443` forwarded to that machine
 
-### One-time setup
-
-1. Update `app` in `fly.toml` to your unique Fly app name.
-2. Create the app (if it does not exist yet):
-   - `fly apps create <your-app-name>`
-3. Create persistent volume for SQLite + artifacts:
-   - `fly volumes create rl_data --region ord --size 3`
-
-### Configure backend environment
-
-Set these on Fly:
-
-- `CORS_ORIGINS=https://<your-vercel-domain>`
-- Optional preview support: `CORS_ORIGIN_REGEX=https://.*\\.vercel\\.app`
-- Optional explicit frontend URL: `FRONTEND_URL=https://<your-vercel-domain>`
-
-Example:
+### A) Clone the repo on the backend machine
 
 ```bash
-fly secrets set \
-  CORS_ORIGINS="https://your-app.vercel.app" \
-  CORS_ORIGIN_REGEX="https://.*\\.vercel\\.app"
+git clone https://github.com/lordSauron1710/rl-sandbox.git
+cd rl-sandbox
+cp deploy/selfhosted/backend.env.example deploy/selfhosted/backend.env
 ```
 
-### Deploy backend
+### B) Edit `deploy/selfhosted/backend.env`
+
+Minimum values:
+
+- `API_DOMAIN`: public hostname for the backend
+- `RLV_ACCESS_TOKEN`: long random token used to unlock the backend from the frontend
+- `FRONTEND_URL`: Vercel production frontend URL
+- `CORS_ORIGINS`: same Vercel production frontend URL
+- `TRUSTED_HOSTS`: backend hostname
+
+Optional:
+
+- `CORS_ORIGIN_REGEX=https://.*\\.vercel\\.app` if you want Vercel preview deployments to work too
+
+### C) Validate and start the backend stack
 
 ```bash
-fly deploy
+make selfhosted-backend-api-url
+make selfhosted-backend-config
+make selfhosted-backend-up
+make selfhosted-backend-ps
 ```
 
-After deploy:
+Or without `make`:
 
-- Health endpoint: `https://<your-app-name>.fly.dev/health`
-- API base URL for frontend: `https://<your-app-name>.fly.dev/api/v1`
+```bash
+bash scripts/selfhosted-backend.sh api-url
+bash scripts/selfhosted-backend.sh config
+bash scripts/selfhosted-backend.sh up
+bash scripts/selfhosted-backend.sh ps
+```
 
-## 2) Frontend deployment (Vercel)
+The stack does this:
 
-1. Import repo in Vercel.
-2. Set project root directory to `frontend`.
-3. Set env var in Vercel project settings:
-   - `NEXT_PUBLIC_API_URL=https://<your-app-name>.fly.dev/api/v1`
-4. Deploy.
+- builds the FastAPI backend from `backend/Dockerfile`
+- stores SQLite + run artifacts in a Docker volume mounted at `/data`
+- terminates HTTPS with Caddy
+- exposes only Caddy on ports `80` and `443`
 
-`frontend/vercel.json` defines production headers for security and static asset caching.
+### D) Verify the backend
+
+```bash
+curl https://<your-api-domain>/health
+```
+
+Expected result: a JSON payload with `"status": "healthy"`.
+
+### E) Point Vercel at the backend
+
+In the Vercel project for `frontend/`, set the value printed by:
+
+```bash
+make selfhosted-backend-api-url
+```
+
+Then redeploy the frontend.
+
+### F) Unlock the backend from the deployed frontend
+
+Open the Vercel frontend. On first use against the protected backend, the app
+will prompt for the `RLV_ACCESS_TOKEN` value from `deploy/selfhosted/backend.env`
+and exchange it for an HttpOnly session cookie on the backend domain.
+
+### G) Day-2 operations
+
+```bash
+make selfhosted-backend-logs
+make selfhosted-backend-backup
+make selfhosted-backend-down
+```
+
+Restore from a backup archive:
+
+```bash
+make selfhosted-backend-restore BACKUP=/absolute/path/to/backup.tar.gz
+```
 
 ## 3) Deployment environment variables
 
-### Backend
+### Self-hosted backend env file
 
-| Variable | Required | Value |
+File: `deploy/selfhosted/backend.env`
+
+| Variable | Required | Example |
 |---|---|---|
+| `API_DOMAIN` | Yes | `api.example.com` |
 | `APP_ENV` | Yes | `production` |
-| `RLV_DB_PATH` | Yes | `/data/rl_visualizer.db` |
-| `RLV_RUNS_DIR` | Yes | `/data/runs` |
-| `CORS_ORIGINS` | Yes | `https://<your-vercel-domain>` |
-| `CORS_ORIGIN_REGEX` | Optional | `https://.*\\.vercel\\.app` |
-| `FRONTEND_URL` | Optional | `https://<your-vercel-domain>` |
-| `TRUSTED_HOSTS` | Recommended | `api.example.com,<your-app-name>.fly.dev` |
-| `ENABLE_API_DOCS` | Optional | `false` for public prod |
+| `ENABLE_API_DOCS` | No | `false` |
+| `RLV_ACCESS_TOKEN` | Yes | `long-random-secret` |
+| `FRONTEND_URL` | Yes | `https://your-project.vercel.app` |
+| `CORS_ORIGINS` | Yes | `https://your-project.vercel.app` |
+| `CORS_ORIGIN_REGEX` | No | `https://.*\\.vercel\\.app` |
+| `TRUSTED_HOSTS` | Yes | `api.example.com` |
 
-### Frontend (Vercel)
+### Vercel frontend
 
-| Variable | Required | Value |
+| Variable | Required | Example |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | Yes | `https://<your-app-name>.fly.dev/api/v1` |
+| `NEXT_PUBLIC_API_URL` | Yes | `https://api.example.com/api/v1` |
 
 ## 4) Common issues
 
-- `403` or browser CORS errors:
-  - Verify `CORS_ORIGINS` exactly matches the Vercel origin (protocol + hostname).
-  - If preview deployments fail, add `CORS_ORIGIN_REGEX`.
-- `400`/`403` on deployed backend due to host/origin enforcement:
+- Caddy cannot obtain HTTPS certificates:
+  - Verify the hostname points to the machine's public IP.
+  - Verify ports `80` and `443` are reachable from the internet.
+- Vercel production works but previews fail:
+  - Add `CORS_ORIGIN_REGEX=https://.*\\.vercel\\.app` to `deploy/selfhosted/backend.env`.
+- `400`/`403` from the backend:
   - Verify `TRUSTED_HOSTS` contains the public API hostname.
-  - Verify WebSocket traffic originates from an allowed frontend origin.
-- Data disappears after restart:
-  - Confirm Fly volume exists and `fly.toml` mount source is `rl_data`.
-  - Confirm `RLV_DB_PATH` and `RLV_RUNS_DIR` point to `/data/...`.
-- Frontend cannot reach backend:
-  - Ensure `NEXT_PUBLIC_API_URL` includes `/api/v1`.
-  - Redeploy frontend after env var changes.
+  - Verify `FRONTEND_URL` and `CORS_ORIGINS` exactly match the Vercel frontend origin.
+- Frontend prompts for a token repeatedly:
+  - Verify `RLV_ACCESS_TOKEN` in `deploy/selfhosted/backend.env`.
+  - Confirm the backend is running over HTTPS so the secure session cookie can be set.
 - Health check fails:
-  - Verify backend responds on `/health` and internal port `8000`.
-  - Check logs: `fly logs`.
+  - Inspect container logs with `make selfhosted-backend-logs`.
+  - Verify the backend machine can build the image and start the FastAPI container.
+- Data disappears after recreation:
+  - Do not remove the `rl_sandbox_data` Docker volume unless you intend to wipe state.
 
 ## 5) Security notes
 
-- Never commit secrets (`.env`, tokens, API keys, credentials).
-- Store secrets only in Fly/Vercel environment variable management.
-- Keep local secret files gitignored.
-- Rotate leaked credentials immediately and redeploy.
-- Public unauthenticated deployment of training/evaluation endpoints is not recommended without an additional network boundary or auth layer.
+- Never commit `deploy/selfhosted/backend.env`.
+- Keep the backend public origin allowlist tight.
+- Keep API docs disabled in public production unless you have a private/admin-only deployment.
+- Set a strong `RLV_ACCESS_TOKEN` before exposing the backend to the internet.
+- Back up the persistent `/data` volume before host rebuilds or volume maintenance.

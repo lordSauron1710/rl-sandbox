@@ -4,6 +4,7 @@
 
 - Frontend: Next.js on Vercel or another static/Node-capable host
 - Backend: one stateful FastAPI container/process with persistent disk
+- Canonical no-monthly-bill deployment assets live under `deploy/selfhosted/`
 
 ## Non-Negotiables
 
@@ -15,6 +16,7 @@
 ## Required Production Backend Settings
 
 - `APP_ENV=production`
+- `RLV_ACCESS_TOKEN`
 - `CORS_ORIGINS` and/or `FRONTEND_URL`
 - `TRUSTED_HOSTS`
 - `RLV_DB_PATH`
@@ -23,5 +25,8 @@
 ## Recommended Production Posture
 
 - Keep API docs disabled in public production.
-- Restrict public exposure of unauthenticated training endpoints behind a private network, reverse proxy policy, or future auth layer.
+- For the self-hosted public path, require the deployment access-token session
+  flow unless the backend is otherwise network-restricted.
+- Use the checked-in Compose + Caddy stack as the baseline deployment shape unless there is a documented reason to diverge.
+- Keep a documented backup/restore path for the persistent `/data` volume.
 - Do not depend on marketing-page free tiers staying available; keep deployment docs provider-agnostic where possible.

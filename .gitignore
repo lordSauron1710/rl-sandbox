@@ -61,6 +61,7 @@ Thumbs.db
 .env.development.local
 .env.test.local
 .env.production.local
+deploy/selfhosted/backend.env
 
 # Project-specific
 runs/

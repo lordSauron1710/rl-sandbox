@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  AccessGate,
   Header,
   LeftSidebar,
   CenterPanel,
@@ -19,12 +20,15 @@ import {
   useEventLog,
 } from '@/hooks'
 import {
+  API_BASE_URL,
   AlgorithmName,
   AlgorithmPresetTable,
-  PresetName,
   EvaluationSummary,
+  PresetName,
+  createSession,
   fetchRunPresets,
   getLatestEvaluation,
+  getSessionStatus,
   getLatestEvaluationVideoUrl,
   toAbsoluteApiUrl,
 } from '@/services/api'
@@ -93,7 +97,7 @@ function clampPercent(value: number | undefined): number {
   return Math.max(0, Math.min(100, value as number))
 }
 
-export default function Home() {
+function Dashboard() {
   // Fetch environments from API
   const { environments, isLoading: isLoadingEnvironments, error: environmentsError, refetch: refetchEnvironments } = useEnvironments()
   
@@ -967,4 +971,78 @@ export default function Home() {
       />
     </>
   )
+}
+
+type AccessState = 'checking' | 'locked' | 'ready'
+
+export default function Home() {
+  const [accessState, setAccessState] = useState<AccessState>('checking')
+  const [accessError, setAccessError] = useState<string | null>(null)
+  const [isUnlocking, setIsUnlocking] = useState(false)
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const checkSession = async () => {
+      try {
+        const session = await getSessionStatus()
+        if (isCancelled) return
+        setAccessError(null)
+        setAccessState(
+          session.access_control_enabled && !session.authenticated ? 'locked' : 'ready'
+        )
+      } catch {
+        if (isCancelled) return
+        // Preserve the frontend-only demo behavior if the backend is unreachable.
+        setAccessState('ready')
+      }
+    }
+
+    void checkSession()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
+
+  const handleUnlock = useCallback(async (token: string) => {
+    setIsUnlocking(true)
+    setAccessError(null)
+    try {
+      const session = await createSession(token)
+      if (session.access_control_enabled && !session.authenticated) {
+        throw new Error('Backend session was not established.')
+      }
+      setAccessState('ready')
+    } catch (err) {
+      setAccessError(
+        err instanceof Error ? err.message : 'Failed to unlock the backend session'
+      )
+    } finally {
+      setIsUnlocking(false)
+    }
+  }, [])
+
+  if (accessState === 'checking') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-surface-secondary px-6 py-10 text-primary">
+        <div className="rounded-3xl border border-border bg-surface px-8 py-6 text-sm text-secondary shadow-[0_24px_80px_rgba(0,0,0,0.18)]">
+          Checking backend access...
+        </div>
+      </main>
+    )
+  }
+
+  if (accessState === 'locked') {
+    return (
+      <AccessGate
+        apiBaseUrl={API_BASE_URL}
+        error={accessError}
+        isSubmitting={isUnlocking}
+        onSubmit={handleUnlock}
+      />
+    )
+  }
+
+  return <Dashboard />
 }

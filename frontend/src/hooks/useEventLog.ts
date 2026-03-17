@@ -176,7 +176,9 @@ export function useEventLog(): UseEventLogResult {
         })
 
       try {
-        const eventSource = new EventSource(getEventsStreamUrl(runId))
+        const eventSource = new EventSource(getEventsStreamUrl(runId), {
+          withCredentials: true,
+        })
         eventSourceRef.current = eventSource
 
         eventSource.onopen = () => {

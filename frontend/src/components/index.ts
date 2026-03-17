@@ -6,6 +6,7 @@ export { RightSidebar } from './RightSidebar'
 export { AnalysisPanel } from './AnalysisPanel'
 export { EventLog } from './EventLog'
 export { ReportWorkflow } from './ReportWorkflow'
+export { AccessGate } from './AccessGate'
 
 // UI components
 export { LoadingButton, LoadingSpinner, LoadingRing } from './LoadingButton'

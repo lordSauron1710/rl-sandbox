@@ -86,13 +86,17 @@ rl-sandbox/
 │   │   ├── hooks/
 │   │   └── services/
 │   └── vercel.json
+├── deploy/
+│   └── selfhosted/
+│       ├── Caddyfile
+│       ├── backend.env.example
+│       └── docker-compose.yml
 ├── docs/
 │   ├── guides/
 │   ├── policies/
 │   ├── prompts/
 │   └── reports/
 ├── scripts/
-├── fly.toml
 ├── roadmap.md
 └── README.md
 ```
@@ -133,6 +137,23 @@ Production deployment guide:
 
 - `docs/guides/deployment.md`
 
+## Full App Deployment (Vercel + Self-Hosted Backend)
+
+For a full working deployment without paying for a managed backend, run the
+backend on your own machine with the included Compose stack and keep the
+frontend on Vercel.
+
+```bash
+cp deploy/selfhosted/backend.env.example deploy/selfhosted/backend.env
+make selfhosted-backend-api-url
+make selfhosted-backend-config
+make selfhosted-backend-up
+```
+
+Set the printed `NEXT_PUBLIC_API_URL` value in Vercel, redeploy the frontend,
+then open the app and enter the `RLV_ACCESS_TOKEN` value once when prompted.
+See `docs/guides/deployment.md` for router, HTTPS, and hostname setup.
+
 ## Test commands
 
 Backend should be running first.
@@ -161,6 +182,8 @@ make test
 | Variable | Scope | Default | Notes |
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | Frontend | `http://127.0.0.1:8000/api/v1` | API base URL used by frontend |
+| `API_DOMAIN` | Self-hosted deploy | unset | Public hostname used by Caddy for HTTPS backend |
+| `RLV_ACCESS_TOKEN` | Self-hosted deploy | unset | Required backend access token for public Vercel-to-backend use |
 | `APP_ENV` | Backend | `development` | Set to `production` for deployed backend hardening |
 | `RLV_RUNS_DIR` | Backend | `backend/runs` | Artifact storage root |
 | `RLV_DB_PATH` | Backend | `backend/data/rl_visualizer.db` | SQLite database path |
@@ -177,6 +200,10 @@ make test
 ## Documentation map
 
 - `docs/guides/deployment.md`: frontend-only demo and full split deployment options
+- `deploy/selfhosted/docker-compose.yml`: self-hosted backend stack for full app deployment
+- `deploy/selfhosted/Caddyfile`: HTTPS reverse proxy config for self-hosted backend
+- `deploy/selfhosted/backend.env.example`: production env template for the self-hosted backend
+- `scripts/selfhosted-backend.sh`: wrapper for starting, validating, backing up, and restoring the self-hosted backend stack
 - `docs/policies/POLICY_INDEX.md`: entrypoint for repo security and deployment policies
 - `docs/policies/SECURITY.md`: repo-wide security baseline
 - `docs/policies/API.md`: rules for network-facing handlers and streaming endpoints

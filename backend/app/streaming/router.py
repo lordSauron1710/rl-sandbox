@@ -15,6 +15,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Request, status
 from fastapi.responses import StreamingResponse
 
+from app.auth import is_websocket_authenticated
 from app.db import runs_repository, events_repository
 from app.security import is_origin_allowed
 from app.storage.run_storage import RunStorage
@@ -302,6 +303,10 @@ async def websocket_frames(
     origin = websocket.headers.get("origin")
     if not is_origin_allowed(origin):
         await websocket.close(code=1008, reason="Origin not allowed")
+        return
+
+    if not is_websocket_authenticated(websocket):
+        await websocket.close(code=4401, reason="Authentication required")
         return
     
     # Verify run exists

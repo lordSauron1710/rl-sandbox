@@ -4,12 +4,14 @@ RL Gym Visualizer - FastAPI Backend
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 
 from app.db.database import init_db
-from app.routers import environments_router, runs_router
+from app.auth import is_access_control_enabled, is_public_path, is_request_authenticated
+from app.routers import auth_router, environments_router, runs_router
 from app.security import (
     get_cors_origin_regex,
     get_cors_origins,
@@ -48,6 +50,29 @@ trusted_hosts = get_trusted_hosts()
 if trusted_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
+
+@app.middleware("http")
+async def enforce_access_control(request: Request, call_next):
+    """Require deployment access for non-public HTTP routes when configured."""
+    if (
+        request.method == "OPTIONS"
+        or not is_access_control_enabled()
+        or is_public_path(request.url.path)
+        or is_request_authenticated(request)
+    ):
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        content={
+            "error": {
+                "code": "unauthorized",
+                "message": "Authentication required. Create a deployment session first.",
+            }
+        },
+    )
+
+
 # CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
@@ -70,6 +95,7 @@ async def add_security_headers(request, call_next):
 
 
 # Include API routers with /api/v1 prefix
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(environments_router, prefix="/api/v1")
 app.include_router(runs_router, prefix="/api/v1")
 app.include_router(streaming_router, prefix="/api/v1")

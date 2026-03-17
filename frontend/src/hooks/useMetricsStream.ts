@@ -57,7 +57,7 @@ export function useMetricsStream(): UseMetricsStreamResult {
     
     try {
       const url = getMetricsStreamUrl(runId)
-      const eventSource = new EventSource(url)
+      const eventSource = new EventSource(url, { withCredentials: true })
       eventSourceRef.current = eventSource
       runIdRef.current = runId
       
