@@ -870,7 +870,7 @@ function Dashboard() {
 
   return (
     <>
-      <Header version="v0.0" />
+      <Header version="v1.0" />
 
       {/* Backend unreachable banner */}
       {environmentsError && (

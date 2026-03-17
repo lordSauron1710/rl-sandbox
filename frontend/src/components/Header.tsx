@@ -4,7 +4,7 @@ interface HeaderProps {
   version?: string
 }
 
-export function Header({ version = 'v0.0' }: HeaderProps) {
+export function Header({ version = 'v1.0' }: HeaderProps) {
   return (
     <header className="h-[60px] border-b border-border flex items-center justify-between px-4 flex-shrink-0 bg-white">
       {/* Logo */}
