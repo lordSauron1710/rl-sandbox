@@ -2,9 +2,8 @@
 
 Lightweight RL training and evaluation visualizer with a Next.js dashboard and FastAPI backend.
 
-> **Important:** The Vercel-hosted version is a **frontend demo only**, not the full working app.  
-> To use training, evaluation, and live backend streams end-to-end, run the project locally (`make install && make dev`) or connect to a deployed backend.
-> Live frontend demo: [https://rl-sandbox-three.vercel.app/](https://rl-sandbox-three.vercel.app/)
+> **Live app:** [https://rl-sandbox-three.vercel.app/](https://rl-sandbox-three.vercel.app/)
+> The public frontend only works when a reachable backend is configured behind it. For a guaranteed end-to-end setup, run locally or use the self-hosted backend flow below.
 
 [![CI](https://github.com/lordSauron1710/rl-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/lordSauron1710/rl-sandbox/actions/workflows/ci.yml)
 [![Stars](https://img.shields.io/github/stars/lordSauron1710/rl-sandbox?style=flat)](https://github.com/lordSauron1710/rl-sandbox/stargazers)
@@ -12,7 +11,7 @@ Lightweight RL training and evaluation visualizer with a Next.js dashboard and F
 [![Issues](https://img.shields.io/github/issues/lordSauron1710/rl-sandbox)](https://github.com/lordSauron1710/rl-sandbox/issues)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
 
-![RL Sandbox UI](docs/assets/frontend-design-reference.png)
+![RL Sandbox UI](docs/assets/frontend-live-ui.png)
 
 ## What it does
 
@@ -20,7 +19,7 @@ Lightweight RL training and evaluation visualizer with a Next.js dashboard and F
 - Streams live metrics (SSE) and frames (WebSocket) to a single-page dashboard.
 - Runs evaluation episodes, records MP4 artifacts, and serves latest results.
 - Persists run metadata in SQLite and artifacts on disk.
-- Supports a frontend-only Vercel demo plus a full local run mode for training/evaluation.
+- Supports a Vercel-hosted frontend paired with a long-running backend for full training/evaluation.
 
 ## Architecture
 
@@ -123,14 +122,13 @@ Local URLs:
 - Backend API: `http://127.0.0.1:8000/api/v1`
 - Backend docs: `http://127.0.0.1:8000/docs`
 
-## Frontend-only demo (Vercel)
+## Public Frontend (Vercel)
 
-You can deploy only `frontend/` to Vercel as a UI/demo showcase.
+You can host the Next.js frontend on Vercel and point it at a reachable backend.
 
-- Live demo: [https://rl-sandbox-three.vercel.app/](https://rl-sandbox-three.vercel.app/)
-- This deployment is explicitly a **frontend demo**, not the full working app.
-- In this mode, training/evaluation is not fully functional without a reachable backend.
-- For full functionality, run the app locally with the quick-start commands above.
+- Live app: [https://rl-sandbox-three.vercel.app/](https://rl-sandbox-three.vercel.app/)
+- Training, evaluation, SSE, and frame streaming require a live backend API.
+- For guaranteed end-to-end functionality, either run locally with the quick-start commands above or use the self-hosted backend deployment below.
 - Browser security prevents an HTTPS-hosted frontend from reliably calling a local HTTP backend.
 
 Production deployment guide:
@@ -209,7 +207,7 @@ make test
 
 ## Documentation map
 
-- `docs/guides/deployment.md`: frontend-only demo and full split deployment options
+- `docs/guides/deployment.md`: Vercel frontend and full split deployment options
 - `deploy/selfhosted/docker-compose.yml`: self-hosted backend stack for full app deployment
 - `deploy/selfhosted/Caddyfile`: HTTPS reverse proxy config for self-hosted backend
 - `deploy/selfhosted/backend.env.example`: production env template for the self-hosted backend
