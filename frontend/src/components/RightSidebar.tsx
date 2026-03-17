@@ -31,7 +31,7 @@ export function RightSidebar(props: RightSidebarProps) {
   } = props
 
   return (
-    <div className="panel-card col col-right w-[320px] flex-shrink-0">
+    <div className="panel-card col col-right w-full min-w-0">
       <div className="panel-header">
         <span className="label m-0">ANALYSIS & EXPLAINER</span>
       </div>

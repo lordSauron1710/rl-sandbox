@@ -84,7 +84,7 @@ export function LeftSidebar({
   const testProgressLabel = `${Math.max(0, Math.min(100, Math.round(testingProgressPercent)))}%`
 
   return (
-    <div className="panel-card col w-[280px] flex-shrink-0">
+    <div className="panel-card col w-full min-w-0">
       {/* Environment Select Header */}
       <div className="panel-header">
         <span className="label m-0">ENVIRONMENT SELECT</span>
