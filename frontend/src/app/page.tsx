@@ -973,10 +973,10 @@ function Dashboard() {
   )
 }
 
-type AccessState = 'checking' | 'locked' | 'ready'
+type AccessState = 'locked' | 'ready'
 
 export default function Home() {
-  const [accessState, setAccessState] = useState<AccessState>('checking')
+  const [accessState, setAccessState] = useState<AccessState>('ready')
   const [accessError, setAccessError] = useState<string | null>(null)
   const [isUnlocking, setIsUnlocking] = useState(false)
 
@@ -1022,16 +1022,6 @@ export default function Home() {
       setIsUnlocking(false)
     }
   }, [])
-
-  if (accessState === 'checking') {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-surface-secondary px-6 py-10 text-primary">
-        <div className="rounded-3xl border border-border bg-surface px-8 py-6 text-sm text-secondary shadow-[0_24px_80px_rgba(0,0,0,0.18)]">
-          Checking backend access...
-        </div>
-      </main>
-    )
-  }
 
   if (accessState === 'locked') {
     return (

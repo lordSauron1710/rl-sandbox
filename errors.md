@@ -188,6 +188,18 @@ Applied in `TrainingRunner._create_env` and `EvaluationRunner._create_env` so re
 
 ---
 
+### 3.5 App showed blocking "Checking backend access..." card on every refresh
+
+**Symptom:** Opening or refreshing the frontend showed a centered "Checking backend access..." card before the dashboard rendered, even on deployments where no backend access token was configured.
+
+**Root cause:** `Home` initialized the access gate state as `checking` and blocked first render until `/auth/session` completed. That forced an unnecessary intermediate loading screen for the normal open-access path.
+
+**Fix (latest, working):** Default the page access state to `ready` and run the backend session check in the background. Only switch to `locked` if the backend explicitly reports `access_control_enabled && !authenticated`. Keep the existing fallback to `ready` when the backend is unreachable.
+
+**Lesson:** Optional access-control probes should not block first paint for the common "open directly" path.
+
+---
+
 ## 4. Backend: config guardrails
 
 ### 4.1 Algorithm-incompatible hyperparameters were silently ignored
@@ -307,6 +319,7 @@ Without terminal-status normalization, completed runs did not consistently map t
 | Frontend / state      | Hook swallowed async errors                         | Flow bug   | useTraining success/error propagation    |
 | Frontend / UI state   | Report preview reused stale scroll offsets          | UX bug     | report workflow preview pane             |
 | Frontend / tooling    | Missing Next chunk module (`./575.js`)              | Build cache drift | stale `.next` runtime artifacts |
+| Frontend / load flow  | Blocking backend-access check showed on every refresh | UX bug   | `Home` access-gate bootstrap before dashboard render |
 | Backend / validation  | Algorithm-incompatible hyperparameters accepted     | Schema bug | `POST /runs` override validation         |
 | Backend / API semantics | Duplicate start returns alternate 409 error codes | Race/contract nuance | router vs manager start guards |
 | Backend / progress semantics | Completed runs reported partial or >100% progress | Logic bug | `GET /runs/{id}` progress composition (manager + storage) |
