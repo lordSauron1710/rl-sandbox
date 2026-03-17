@@ -1,57 +1,23 @@
 """
 RL Gym Visualizer - FastAPI Backend
 """
-import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.db.database import init_db
 from app.routers import environments_router, runs_router
+from app.security import (
+    get_cors_origin_regex,
+    get_cors_origins,
+    get_trusted_hosts,
+    should_expose_api_docs,
+)
 from app.streaming import streaming_router
 from app.training import get_background_worker, get_training_manager
-
-
-def _get_cors_origins() -> list[str]:
-    """
-    Read CORS origins from env, with safe local defaults.
-
-    Supports:
-      - CORS_ORIGINS="https://app.example.com,https://preview.example.com"
-      - FRONTEND_URL="https://app.example.com" (appended if not present)
-    """
-    default_origins = "http://localhost:3000,http://127.0.0.1:3000"
-    raw = os.getenv("CORS_ORIGINS", default_origins)
-
-    origins: list[str] = []
-    seen: set[str] = set()
-
-    for value in raw.split(","):
-        origin = value.strip().rstrip("/")
-        if not origin or origin in seen:
-            continue
-        origins.append(origin)
-        seen.add(origin)
-
-    frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
-    if frontend_url and frontend_url not in seen:
-        origins.append(frontend_url)
-
-    return origins or default_origins.split(",")
-
-
-def _get_cors_origin_regex() -> str | None:
-    """
-    Optional regex for dynamic origins (e.g. Vercel preview URLs).
-
-    Example:
-      CORS_ORIGIN_REGEX="https://.*\\.vercel\\.app"
-    """
-    raw = os.getenv("CORS_ORIGIN_REGEX", "").strip()
-    return raw or None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -67,22 +33,41 @@ async def lifespan(app: FastAPI):
         get_training_manager().cleanup()
 
 
+api_docs_enabled = should_expose_api_docs()
 app = FastAPI(
     title="RL Gym Visualizer",
     description="Backend API for RL training visualization",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs" if api_docs_enabled else None,
+    redoc_url="/redoc" if api_docs_enabled else None,
+    openapi_url="/openapi.json" if api_docs_enabled else None,
 )
+
+trusted_hosts = get_trusted_hosts()
+if trusted_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
 # CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_get_cors_origins(),
-    allow_origin_regex=_get_cors_origin_regex(),
+    allow_origins=get_cors_origins(),
+    allow_origin_regex=get_cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    """Attach baseline security headers to backend responses."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    return response
+
 
 # Include API routers with /api/v1 prefix
 app.include_router(environments_router, prefix="/api/v1")
@@ -106,6 +91,6 @@ async def root():
     return {
         "message": "RL Gym Visualizer API",
         "version": "0.1.0",
-        "docs": "/docs",
+        "docs": "/docs" if api_docs_enabled else None,
         "api_base": "/api/v1",
     }

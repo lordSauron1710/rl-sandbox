@@ -1,9 +1,12 @@
-# Deployment Guide (Vercel Frontend + Fly.io Backend)
+# Deployment Guide (Vercel Frontend + Stateful Backend)
 
 This project is deployed as two services:
 
 - Frontend: Vercel (`frontend/`)
-- Backend: Fly.io (`backend/`)
+- Backend: one stateful FastAPI service (`backend/`)
+
+The backend can run on Fly.io, a VM, or a self-hosted Docker host. Do not rely
+on any provider's free-tier marketing as part of the security model.
 
 ## 0) Frontend-only demo deployment (Vercel)
 
@@ -73,15 +76,18 @@ After deploy:
 
 ## 3) Deployment environment variables
 
-### Backend (Fly.io)
+### Backend
 
 | Variable | Required | Value |
 |---|---|---|
+| `APP_ENV` | Yes | `production` |
 | `RLV_DB_PATH` | Yes | `/data/rl_visualizer.db` |
 | `RLV_RUNS_DIR` | Yes | `/data/runs` |
 | `CORS_ORIGINS` | Yes | `https://<your-vercel-domain>` |
 | `CORS_ORIGIN_REGEX` | Optional | `https://.*\\.vercel\\.app` |
 | `FRONTEND_URL` | Optional | `https://<your-vercel-domain>` |
+| `TRUSTED_HOSTS` | Recommended | `api.example.com,<your-app-name>.fly.dev` |
+| `ENABLE_API_DOCS` | Optional | `false` for public prod |
 
 ### Frontend (Vercel)
 
@@ -94,6 +100,9 @@ After deploy:
 - `403` or browser CORS errors:
   - Verify `CORS_ORIGINS` exactly matches the Vercel origin (protocol + hostname).
   - If preview deployments fail, add `CORS_ORIGIN_REGEX`.
+- `400`/`403` on deployed backend due to host/origin enforcement:
+  - Verify `TRUSTED_HOSTS` contains the public API hostname.
+  - Verify WebSocket traffic originates from an allowed frontend origin.
 - Data disappears after restart:
   - Confirm Fly volume exists and `fly.toml` mount source is `rl_data`.
   - Confirm `RLV_DB_PATH` and `RLV_RUNS_DIR` point to `/data/...`.
@@ -110,3 +119,4 @@ After deploy:
 - Store secrets only in Fly/Vercel environment variable management.
 - Keep local secret files gitignored.
 - Rotate leaked credentials immediately and redeploy.
+- Public unauthenticated deployment of training/evaluation endpoints is not recommended without an additional network boundary or auth layer.

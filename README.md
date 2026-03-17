@@ -58,8 +58,9 @@ flowchart LR
   backend --> b3["app/streaming (SSE/WS pubsub)"]
   backend --> b4["app/db + app/storage (SQLite + artifacts)"]
 
-  docs --> d1["deployment.md"]
-  docs --> d2["assets/ (reference visuals)"]
+  docs --> d1["guides/ (deployment + ops docs)"]
+  docs --> d2["prompts/ (analysis notes)"]
+  docs --> d3["assets/ (reference visuals)"]
 
   scripts --> s1["dev.sh (one-command local dev)"]
 ```
@@ -86,6 +87,10 @@ rl-sandbox/
 │   │   └── services/
 │   └── vercel.json
 ├── docs/
+│   ├── guides/
+│   ├── policies/
+│   ├── prompts/
+│   └── reports/
 ├── scripts/
 ├── fly.toml
 ├── roadmap.md
@@ -126,7 +131,7 @@ You can deploy only `frontend/` to Vercel as a UI/demo showcase.
 
 Production deployment guide:
 
-- `docs/deployment.md`
+- `docs/guides/deployment.md`
 
 ## Test commands
 
@@ -156,11 +161,14 @@ make test
 | Variable | Scope | Default | Notes |
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | Frontend | `http://127.0.0.1:8000/api/v1` | API base URL used by frontend |
+| `APP_ENV` | Backend | `development` | Set to `production` for deployed backend hardening |
 | `RLV_RUNS_DIR` | Backend | `backend/runs` | Artifact storage root |
 | `RLV_DB_PATH` | Backend | `backend/data/rl_visualizer.db` | SQLite database path |
 | `CORS_ORIGINS` | Backend | local frontend origins | Comma-separated allowed origins |
 | `CORS_ORIGIN_REGEX` | Backend | unset | Optional regex for preview domains |
 | `FRONTEND_URL` | Backend | unset | Optional single frontend origin |
+| `TRUSTED_HOSTS` | Backend | local hosts in dev | Optional host allowlist for public HTTP traffic |
+| `ENABLE_API_DOCS` | Backend | disabled in prod | Override interactive docs exposure |
 | `BACKEND_HOST` | Dev runner | `127.0.0.1` | Uvicorn host |
 | `BACKEND_PORT` | Dev runner | `8000` | Uvicorn port |
 | `FRONTEND_HOST` | Dev runner | `127.0.0.1` | Next.js host |
@@ -168,7 +176,15 @@ make test
 
 ## Documentation map
 
-- `docs/deployment.md`: frontend-only demo and full split deployment options
+- `docs/guides/deployment.md`: frontend-only demo and full split deployment options
+- `docs/policies/POLICY_INDEX.md`: entrypoint for repo security and deployment policies
+- `docs/policies/SECURITY.md`: repo-wide security baseline
+- `docs/policies/API.md`: rules for network-facing handlers and streaming endpoints
+- `docs/policies/DATABASE.md`: persistence and artifact-storage rules
+- `docs/policies/ENV_VARIABLES.md`: env-var handling rules
+- `docs/policies/DEPLOYMENT.md`: deployment baseline and production settings
+- `docs/policies/INCIDENT_RESPONSE.md`: containment and recovery workflow
+- `docs/reports/security_best_practices_report.md`: current security cleanup summary
 - `errors.md`: latest known issues and fixes
 - `roadmap.md`: implementation roadmap and prompt status
 

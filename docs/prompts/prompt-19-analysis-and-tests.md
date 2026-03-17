@@ -23,7 +23,7 @@ Prompt 19 required production deployment setup for:
   - supports `CORS_ORIGINS`
   - supports optional `FRONTEND_URL` append
   - supports optional `CORS_ORIGIN_REGEX` for preview domains
-- README + `docs/deployment.md` deployment instructions.
+- README + `docs/guides/deployment.md` deployment instructions.
 
 ## Edge cases covered
 
@@ -49,4 +49,3 @@ Prompt 19 required production deployment setup for:
 - Manual deploy smoke:
   - Fly health endpoint returns 200
   - Vercel frontend can call `GET /api/v1/environments` through configured backend URL
-

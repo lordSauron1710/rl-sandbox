@@ -14,7 +14,7 @@ This repository contains the development of an **RL Gym Visualizer** - a lightwe
 
 ```
 ┌─────────────────┐         ┌─────────────────────────┐
-│   Vercel        │         │   Fly.io                │
+│   Vercel        │         │   Backend Host          │
 │   (Frontend)    │ ◄─────► │   (Backend)             │
 │                 │   API   │                         │
 │   Next.js       │   SSE   │   FastAPI + Gymnasium   │
@@ -28,9 +28,10 @@ This repository contains the development of an **RL Gym Visualizer** - a lightwe
 - Backend requires heavy compute (PyTorch, Gymnasium rendering)
 - Frontend is static/SSR and deploys perfectly on Vercel
 
-**Chosen hosting:**
-- **Frontend:** Vercel (free tier)
-- **Backend:** Fly.io (free tier - 3 shared CPUs, persistent processes, WebSocket support)
+**Baseline hosting assumptions:**
+- **Frontend:** Vercel Hobby or another static/SSR-capable host
+- **Backend:** one stateful backend host with persistent storage
+- Keep provider-specific free-tier assumptions out of policy decisions; they change over time
 
 ### Key Architectural Decisions
 
@@ -129,6 +130,32 @@ See `docs/assets/frontend-design-reference.png` for the target UI design.
 - No authentication for v0
 - Environment variables for all configuration (API URLs, etc.)
 - Graceful degradation when backend is unavailable
+
+## Security Policy Workflow
+
+`AGENTS.md` is the primary repo instruction file. The policy docs under `docs/policies/` are supplemental and must be updated when the relevant trust boundary changes.
+
+**Read for every change**
+
+- `docs/policies/POLICY_INDEX.md`
+- `docs/policies/SECURITY.md`
+- `docs/policies/ACCESSIBILITY.md`
+- `docs/policies/ENV_VARIABLES.md`
+- `docs/policies/DEPLOYMENT.md`
+
+**Read when introducing new surface area**
+
+- `docs/policies/AUTH.md` before adding login, sessions, roles, or protected views
+- `docs/policies/API.md` before widening network-facing handlers
+- `docs/policies/DATABASE.md` before changing persistence/storage/DB assumptions
+- `docs/policies/INCIDENT_RESPONSE.md` when handling credential exposure or public abuse
+
+**Required follow-through**
+
+- If a change adds auth, APIs, persistence, env vars, or deployment behavior, update the relevant policy doc in the same change.
+- Keep `.env.example` and `README.md` in sync with configuration changes.
+- Run `npm audit --omit=dev` for frontend dependency changes.
+- Run `pip-audit -r backend/requirements.txt` for backend dependency changes.
 
 ## README Standard (apply from now on)
 

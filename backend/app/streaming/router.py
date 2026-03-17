@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Re
 from fastapi.responses import StreamingResponse
 
 from app.db import runs_repository, events_repository
+from app.security import is_origin_allowed
 from app.storage.run_storage import RunStorage
 from app.streaming.pubsub import (
     get_metrics_pubsub,
@@ -297,6 +298,11 @@ async def websocket_frames(
     # Validate query parameters
     fps = max(1, min(30, fps))
     quality = max(1, min(100, quality))
+
+    origin = websocket.headers.get("origin")
+    if not is_origin_allowed(origin):
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
     
     # Verify run exists
     run = runs_repository.get_run(run_id)
