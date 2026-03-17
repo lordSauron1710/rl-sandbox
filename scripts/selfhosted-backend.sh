@@ -90,6 +90,7 @@ init_env() {
   local cors_origins="${CORS_ORIGINS:-$frontend_url}"
   local cors_origin_regex="${CORS_ORIGIN_REGEX:-}"
   local trusted_hosts="${TRUSTED_HOSTS:-$api_domain}"
+  local deployment_boundary="${RLV_DEPLOYMENT_BOUNDARY:-public}"
   local access_token="${RLV_ACCESS_TOKEN:-}"
 
   mkdir -p "$(dirname "$ENV_FILE")"
@@ -101,8 +102,11 @@ API_DOMAIN=$api_domain
 APP_ENV=production
 ENABLE_API_DOCS=false
 
-# Optional deployment access token for the hosted frontend.
-# Leave blank to disable the unlock screen and load the app directly.
+# Declare whether the backend stays public or behind a trusted private network boundary.
+RLV_DEPLOYMENT_BOUNDARY=$deployment_boundary
+
+# Required for public deployments. Leave blank only if RLV_DEPLOYMENT_BOUNDARY=private
+# and the backend is not reachable from the public internet.
 RLV_ACCESS_TOKEN=$access_token
 
 # Vercel frontend origin allowed to call the backend.
@@ -179,8 +183,19 @@ doctor() {
     errors=$((errors + 1))
   }
 
-  if [ -z "${RLV_ACCESS_TOKEN:-}" ]; then
-    warn "RLV_ACCESS_TOKEN is unset; the backend will be directly usable from allowed origins without an unlock screen"
+  local deployment_boundary="${RLV_DEPLOYMENT_BOUNDARY:-public}"
+  if [ "$deployment_boundary" != "public" ] && [ "$deployment_boundary" != "private" ]; then
+    warn "RLV_DEPLOYMENT_BOUNDARY must be 'public' or 'private'"
+    errors=$((errors + 1))
+  fi
+
+  if [ "$deployment_boundary" = "public" ] && [ -z "${RLV_ACCESS_TOKEN:-}" ]; then
+    warn "RLV_ACCESS_TOKEN is required when RLV_DEPLOYMENT_BOUNDARY=public"
+    errors=$((errors + 1))
+  fi
+
+  if [ "$deployment_boundary" = "private" ] && [ -z "${RLV_ACCESS_TOKEN:-}" ]; then
+    warn "RLV_ACCESS_TOKEN is unset; ensure the backend is reachable only through a trusted private network boundary"
   fi
   if [ -n "${RLV_ACCESS_TOKEN:-}" ] && [ "${#RLV_ACCESS_TOKEN}" -lt 24 ]; then
     warn "RLV_ACCESS_TOKEN is short; use a longer random value"

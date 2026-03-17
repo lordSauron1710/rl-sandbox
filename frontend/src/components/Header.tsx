@@ -10,9 +10,7 @@ export function Header({ version = 'v0.0' }: HeaderProps) {
       {/* Logo */}
       <div className="flex items-baseline gap-2">
         <span className="text-outline text-xl">RL SANDBOX</span>
-        <span className="text-[10px] font-mono text-black font-normal">
-          // GYM LAB
-        </span>
+        <span className="text-[10px] font-mono text-black font-normal">{'// GYM LAB'}</span>
       </div>
 
       {/* Version indicator */}

@@ -13,6 +13,9 @@ from starlette.datastructures import Headers
 from app.security import is_origin_allowed, is_production
 
 ACCESS_TOKEN_ENV = "RLV_ACCESS_TOKEN"
+DEPLOYMENT_BOUNDARY_ENV = "RLV_DEPLOYMENT_BOUNDARY"
+PUBLIC_DEPLOYMENT_BOUNDARY = "public"
+PRIVATE_DEPLOYMENT_BOUNDARY = "private"
 SESSION_COOKIE_NAME = "rlv_session"
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 PUBLIC_PATHS = {
@@ -27,6 +30,35 @@ def get_access_token() -> str | None:
     """Return the configured deployment access token, if any."""
     token = os.getenv(ACCESS_TOKEN_ENV, "").strip()
     return token or None
+
+
+def get_deployment_boundary() -> str:
+    """Return the declared production network boundary."""
+    raw = os.getenv(DEPLOYMENT_BOUNDARY_ENV, "").strip().lower()
+    return raw or PUBLIC_DEPLOYMENT_BOUNDARY
+
+
+def validate_access_control_configuration() -> None:
+    """Reject unsafe production startup configurations."""
+    if not is_production():
+        return
+
+    boundary = get_deployment_boundary()
+    if boundary not in {PUBLIC_DEPLOYMENT_BOUNDARY, PRIVATE_DEPLOYMENT_BOUNDARY}:
+        raise RuntimeError(
+            f"{DEPLOYMENT_BOUNDARY_ENV} must be '{PUBLIC_DEPLOYMENT_BOUNDARY}' or "
+            f"'{PRIVATE_DEPLOYMENT_BOUNDARY}'."
+        )
+
+    if get_access_token() or boundary == PRIVATE_DEPLOYMENT_BOUNDARY:
+        return
+
+    raise RuntimeError(
+        "Refusing to start the production backend without deployment access. "
+        f"Set {ACCESS_TOKEN_ENV} for any public deployment, or set "
+        f"{DEPLOYMENT_BOUNDARY_ENV}={PRIVATE_DEPLOYMENT_BOUNDARY} only when the "
+        "backend stays behind a trusted private network boundary."
+    )
 
 
 def is_access_control_enabled() -> bool:

@@ -11,7 +11,8 @@
 
 - `APP_ENV`: backend runtime mode (`development` or `production`)
 - `NEXT_PUBLIC_API_URL`: browser-safe backend API base URL
-- `RLV_ACCESS_TOKEN`: optional deployment access secret for the self-hosted backend
+- `RLV_DEPLOYMENT_BOUNDARY`: production deployment posture (`public` by default, `private` only behind a trusted network boundary)
+- `RLV_ACCESS_TOKEN`: deployment access secret required for public self-hosted backends
 - `VERCEL_TOKEN`: optional Vercel CLI auth token for deployment helper scripts
 - `VERCEL_PROJECT`: optional Vercel project name/id for non-interactive linking
 - `VERCEL_SCOPE`: optional Vercel team/account scope for deployment helper scripts

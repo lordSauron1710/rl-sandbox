@@ -13,6 +13,8 @@
 - Keep interactive docs and schema exposure disabled in public production unless intentionally protected.
 - If the backend is exposed publicly, require either a server-enforced auth layer
   or a trusted network boundary before allowing training/evaluation actions.
+- Production startup must fail closed when neither `RLV_ACCESS_TOKEN` nor an
+  explicit private deployment boundary is configured.
 - Cookie-authenticated unsafe requests must validate `Origin` against the
   allowed frontend origin set.
 

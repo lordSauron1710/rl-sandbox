@@ -303,7 +303,22 @@ Without terminal-status normalization, completed runs did not consistently map t
 
 ---
 
-## 6. Categorisation summary
+### 6.3 Production backend started open when deployment token was unset
+
+**Symptom:** A public production backend could start with `APP_ENV=production` and no `RLV_ACCESS_TOKEN`, leaving training/evaluation routes callable by anyone who could reach the API.
+
+**Root cause:** Access control was entirely opt-in. If `RLV_ACCESS_TOKEN` was blank, the global HTTP middleware and WebSocket auth helpers treated every request as authenticated, even in production.
+
+**Fix (latest, working):**
+1. Add production startup validation so the backend refuses to boot unless either `RLV_ACCESS_TOKEN` is set or `RLV_DEPLOYMENT_BOUNDARY=private` explicitly declares a trusted private network boundary.
+2. Thread `RLV_DEPLOYMENT_BOUNDARY` through deployment config, doctor checks, and docs so operators must choose a secure production posture intentionally.
+3. Add unit coverage for the production access-config guard.
+
+**Lesson:** Public security posture should fail closed at startup. Never make server-enforced access protection optional in production without an explicit, reviewable private-boundary override.
+
+---
+
+## 7. Categorisation summary
 
 | Category              | Error / risk                                      | Type        | Where / when                          |
 |-----------------------|----------------------------------------------------|------------|----------------------------------------|
@@ -325,10 +340,11 @@ Without terminal-status normalization, completed runs did not consistently map t
 | Backend / progress semantics | Completed runs reported partial or >100% progress | Logic bug | `GET /runs/{id}` progress composition (manager + storage) |
 | Backend / queue timing | Evaluate acknowledged before dequeue handoff       | Ordering bug | `/runs/{id}/evaluate` + worker queue pickup |
 | Backend / queue lifecycle | Stop/start restart conflict during cleanup handoff | Lifecycle race | worker queue vs manager in-memory job teardown |
+| Security / deployment | Production backend booted open with no token       | Guardrail bug | production startup auth posture |
 
 ---
 
-## 7. How to use this file
+## 8. How to use this file
 
 - **When you fix a bug:** Add a short entry under the right category (or add a category). Include: symptom, root cause, **Fix (latest, working)** with the method that actually works, and one-line lesson. If we tried multiple approaches, document only the one that works now.
 - **When you find a better or working fix for an existing error:** Replace that entry’s Fix section with the new method. Do not keep multiple attempts; one entry = one current, working fix. Keeps the file consistent and authoritative.

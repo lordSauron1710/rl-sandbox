@@ -103,7 +103,7 @@ rl-sandbox/
 ## Prerequisites
 
 - Python 3.10+
-- Node.js 18+
+- Node.js 20.19+ (22 LTS recommended)
 - npm
 
 ## Quick start
@@ -154,8 +154,10 @@ For non-interactive Vercel automation, export `VERCEL_TOKEN`, and optionally
 `VERCEL_PROJECT` / `VERCEL_SCOPE`. If CLI auth is unavailable but the frontend
 env is already correct, `VERCEL_DEPLOY_HOOK_URL` can trigger the production
 redeploy fallback.
-If `RLV_ACCESS_TOKEN` is set on the backend, the deployed app will prompt once
-for it. If you leave `RLV_ACCESS_TOKEN` blank, the app loads directly.
+For public deployments, set `RLV_ACCESS_TOKEN` on the backend. The deployed app
+will prompt once for it and exchange it for an HttpOnly session cookie. Leave
+`RLV_ACCESS_TOKEN` blank only when the backend stays behind a trusted private
+network boundary and `RLV_DEPLOYMENT_BOUNDARY=private`.
 See `docs/guides/deployment.md` for router, HTTPS, and hostname setup.
 
 ## Test commands
@@ -187,7 +189,8 @@ make test
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | Frontend | `http://127.0.0.1:8000/api/v1` | API base URL used by frontend |
 | `API_DOMAIN` | Self-hosted deploy | unset | Public hostname used by Caddy for HTTPS backend |
-| `RLV_ACCESS_TOKEN` | Self-hosted deploy | unset | Optional backend access token; when unset the app opens directly with no unlock screen |
+| `RLV_DEPLOYMENT_BOUNDARY` | Backend | `public` in production | Set to `private` only for a trusted non-public deployment boundary |
+| `RLV_ACCESS_TOKEN` | Self-hosted deploy | unset | Required for public deployments; leave unset only with `RLV_DEPLOYMENT_BOUNDARY=private` |
 | `VERCEL_TOKEN` | Deploy helper | unset | Optional Vercel CLI auth token for deployment scripts |
 | `VERCEL_PROJECT` | Deploy helper | unset | Optional Vercel project name/id for non-interactive linking |
 | `VERCEL_SCOPE` | Deploy helper | unset | Optional Vercel team/account scope for helper scripts |

@@ -72,7 +72,8 @@ Minimum values:
 
 Optional:
 
-- `RLV_ACCESS_TOKEN`: set a long random token if you want an unlock screen before the app loads
+- `RLV_DEPLOYMENT_BOUNDARY=private`: only for deployments kept behind a trusted private network boundary
+- `RLV_ACCESS_TOKEN`: required for any public deployment; set a long random token for the unlock screen
 - `CORS_ORIGIN_REGEX=https://.*\\.vercel\\.app` if you want Vercel preview deployments to work too
 
 ### C) Validate backend prerequisites
@@ -141,7 +142,8 @@ Open the Vercel frontend.
 
 - If `RLV_ACCESS_TOKEN` is set, the app will prompt once for it and exchange it
   for an HttpOnly session cookie on the backend domain.
-- If `RLV_ACCESS_TOKEN` is blank, the app will load directly.
+- If you intentionally leave `RLV_ACCESS_TOKEN` blank, set
+  `RLV_DEPLOYMENT_BOUNDARY=private` and keep the backend off the public internet.
 
 ### I) Day-2 operations
 
@@ -168,7 +170,8 @@ File: `deploy/selfhosted/backend.env`
 | `API_DOMAIN` | Yes | `api.example.com` |
 | `APP_ENV` | Yes | `production` |
 | `ENABLE_API_DOCS` | No | `false` |
-| `RLV_ACCESS_TOKEN` | No | `long-random-secret` |
+| `RLV_DEPLOYMENT_BOUNDARY` | No | `public` |
+| `RLV_ACCESS_TOKEN` | Public: Yes | `long-random-secret` |
 | `FRONTEND_URL` | Yes | `https://your-project.vercel.app` |
 | `CORS_ORIGINS` | Yes | `https://your-project.vercel.app` |
 | `CORS_ORIGIN_REGEX` | No | `https://.*\\.vercel\\.app` |
@@ -204,8 +207,8 @@ File: `deploy/selfhosted/backend.env`
 - Frontend prompts for a token repeatedly:
   - Verify `RLV_ACCESS_TOKEN` in `deploy/selfhosted/backend.env`.
   - Confirm the backend is running over HTTPS so the secure session cookie can be set.
-- Frontend should load directly but still shows the unlock screen:
-  - Clear `RLV_ACCESS_TOKEN` in `deploy/selfhosted/backend.env`.
+- Frontend should load directly on a private deployment but still shows the unlock screen:
+  - Set `RLV_DEPLOYMENT_BOUNDARY=private` and clear `RLV_ACCESS_TOKEN` in `deploy/selfhosted/backend.env`.
   - Recreate the backend container after changing the env file.
 - Vercel helper fails:
   - Run `make vercel-frontend-status`.
@@ -224,5 +227,5 @@ File: `deploy/selfhosted/backend.env`
 - Never commit `deploy/selfhosted/backend.env`.
 - Keep the backend public origin allowlist tight.
 - Keep API docs disabled in public production unless you have a private/admin-only deployment.
-- If you expose the backend publicly with no token, anyone who can reach the API can trigger training and evaluation workloads.
+- Public deployments must set `RLV_ACCESS_TOKEN`; otherwise the backend refuses to start.
 - Back up the persistent `/data` volume before host rebuilds or volume maintenance.

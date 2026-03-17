@@ -42,7 +42,7 @@ export function ReportWorkflow({
   onDelete,
   onDeleteAll,
 }: ReportWorkflowProps) {
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
+  const [selectedReportIdState, setSelectedReportId] = useState<string | null>(null)
   const [activeFormat, setActiveFormat] = useState<ReportFormat>('text')
   const previewRef = useRef<HTMLPreElement | null>(null)
 
@@ -59,16 +59,17 @@ export function ReportWorkflow({
     }
   }, [isOpen, onClose])
 
-  useEffect(() => {
-    if (!isOpen) return
-    if (reports.length === 0) {
-      setSelectedReportId(null)
-      return
+  const selectedReportId = useMemo(() => {
+    if (!isOpen || reports.length === 0) {
+      return null
     }
-    if (!selectedReportId || !reports.some((report) => report.id === selectedReportId)) {
-      setSelectedReportId(reports[0].id)
+
+    if (selectedReportIdState && reports.some((report) => report.id === selectedReportIdState)) {
+      return selectedReportIdState
     }
-  }, [isOpen, reports, selectedReportId])
+
+    return reports[0].id
+  }, [isOpen, reports, selectedReportIdState])
 
   const selectedReport = useMemo(
     () => reports.find((report) => report.id === selectedReportId) ?? null,

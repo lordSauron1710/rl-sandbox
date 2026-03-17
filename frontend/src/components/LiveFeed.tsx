@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { getEnvironmentPreviewUrl } from '@/services/api'
 import { LiveFrameState } from '@/hooks'
 
@@ -40,19 +40,11 @@ export function LiveFeed({
   isEli5Enabled,
   onPlaybackError,
 }: LiveFeedProps) {
-  const [previewError, setPreviewError] = useState(false)
-  const [playbackError, setPlaybackError] = useState(false)
+  const [previewErrorEnvId, setPreviewErrorEnvId] = useState<string | null>(null)
+  const [playbackErrorUrl, setPlaybackErrorUrl] = useState<string | null>(null)
   const previewUrl = selectedEnvId ? getEnvironmentPreviewUrl(selectedEnvId) : null
-  
-  // Reset preview error when environment changes
-  useEffect(() => {
-    setPreviewError(false)
-  }, [selectedEnvId])
-
-  // Reset playback error when playback source changes
-  useEffect(() => {
-    setPlaybackError(false)
-  }, [playbackVideoUrl])
+  const previewError = Boolean(selectedEnvId && previewErrorEnvId === selectedEnvId)
+  const playbackError = Boolean(playbackVideoUrl && playbackErrorUrl === playbackVideoUrl)
 
   // Determine what to display
   const showLiveFrame = isActive && !!liveFrame?.frameData
@@ -123,7 +115,7 @@ export function LiveFeed({
             loop
             playsInline
             onError={() => {
-              setPlaybackError(true)
+              setPlaybackErrorUrl(playbackVideoUrl)
               onPlaybackError?.()
             }}
           />
@@ -135,7 +127,7 @@ export function LiveFeed({
             src={previewUrl}
             alt={`${selectedEnvId} preview`}
             className="max-w-full max-h-full object-contain opacity-90"
-            onError={() => setPreviewError(true)}
+            onError={() => setPreviewErrorEnvId(selectedEnvId)}
           />
         )}
 

@@ -24,8 +24,9 @@
 ## Recommended Production Posture
 
 - Keep API docs disabled in public production.
-- For the self-hosted public path, use `RLV_ACCESS_TOKEN` if you want an unlock
-  screen before the app loads. Leaving it blank makes the app open directly.
+- For the self-hosted public path, set `RLV_ACCESS_TOKEN`.
+- Leave `RLV_ACCESS_TOKEN` blank only when `RLV_DEPLOYMENT_BOUNDARY=private`
+  and the backend is kept behind a trusted private network boundary.
 - Use the checked-in backend/Vercel helper scripts as the baseline deployment
   automation unless there is a documented reason to diverge.
 - Frontend release automation should either use authenticated Vercel CLI access

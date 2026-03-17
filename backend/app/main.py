@@ -10,7 +10,12 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from app.db.database import init_db
-from app.auth import is_access_control_enabled, is_public_path, is_request_authenticated
+from app.auth import (
+    is_access_control_enabled,
+    is_public_path,
+    is_request_authenticated,
+    validate_access_control_configuration,
+)
 from app.routers import auth_router, environments_router, runs_router
 from app.security import (
     get_cors_origin_regex,
@@ -24,6 +29,7 @@ from app.training import get_background_worker, get_training_manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize resources on startup."""
+    validate_access_control_configuration()
     # Initialize database
     init_db()
     get_background_worker().start()
