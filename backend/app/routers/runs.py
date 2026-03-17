@@ -1007,6 +1007,7 @@ async def get_latest_eval_video(run_id: str) -> FileResponse:
         headers={
             "Content-Disposition": f'inline; filename="{video_path.name}"',
             "Cache-Control": "public, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
         }
     )
 
@@ -1072,6 +1073,7 @@ async def get_eval_video_by_name(run_id: str, filename: str) -> FileResponse:
         headers={
             "Content-Disposition": f'inline; filename="{filename}"',
             "Cache-Control": "public, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
         }
     )
 

@@ -258,6 +258,32 @@ Without terminal-status normalization, completed runs did not consistently map t
 
 **Fix (latest, working):**
 1. When cancelling a queued training job before it starts, immediately set run status to `stopped`.
+
+---
+
+## 6. Security & deployment guardrails
+
+### 6.1 WebSocket origin was not enforced in production
+
+**Symptom:** Browser clients from arbitrary origins could attempt frame-stream WebSocket handshakes if the backend was publicly reachable.
+
+**Root cause:** CORS middleware protects HTTP browser requests, but it does not validate WebSocket `Origin` for us. The frame stream accepted sockets without checking the caller origin explicitly.
+
+**Fix (latest, working):** Centralize allowed-origin parsing in backend security helpers and reject WebSocket handshakes whose `Origin` is missing or not in the configured allowlist when running in production.
+
+**Lesson:** For browser WebSockets, treat `Origin` validation as a separate production control; CORS settings alone are not sufficient.
+
+---
+
+### 6.2 Production backend docs/host posture was too permissive by default
+
+**Symptom:** A deployed backend would expose interactive API docs by default and did not have an explicit host-header allowlist.
+
+**Root cause:** FastAPI defaults left docs enabled, and we had no deployment-level helper for `TrustedHostMiddleware`.
+
+**Fix (latest, working):** Disable API docs by default when `APP_ENV=production`, add optional `TRUSTED_HOSTS` middleware, and document both settings in `.env.example`, README, and deployment docs.
+
+**Lesson:** Public production defaults should be conservative; make local development convenient, but require explicit opt-in for docs and broad host acceptance in production.
 2. Do not hard-block enqueue on `manager.is_training`; let the worker own start timing.
 3. In worker execution, if start fails with "already in progress", wait briefly for previous manager cleanup and retry start.
 
