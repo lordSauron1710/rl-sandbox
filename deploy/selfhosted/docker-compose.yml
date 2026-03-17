@@ -12,7 +12,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in deploy/selfhosted/backend.env}
       CORS_ORIGIN_REGEX: ${CORS_ORIGIN_REGEX:-}
       TRUSTED_HOSTS: ${TRUSTED_HOSTS:?Set TRUSTED_HOSTS in deploy/selfhosted/backend.env}
-      RLV_ACCESS_TOKEN: ${RLV_ACCESS_TOKEN:?Set RLV_ACCESS_TOKEN in deploy/selfhosted/backend.env}
+      RLV_ACCESS_TOKEN: ${RLV_ACCESS_TOKEN:-}
       RLV_DB_PATH: /data/rl_visualizer.db
       RLV_RUNS_DIR: /data/runs
     expose:

@@ -10,7 +10,7 @@ NEXT_PUBLIC_API_URL ?= http://$(BACKEND_HOST):$(BACKEND_PORT)/api/v1
 RLV_RUNS_DIR ?= $(CURDIR)/backend/runs
 RLV_DB_PATH ?= $(CURDIR)/backend/data/rl_visualizer.db
 
-.PHONY: help install install-backend install-frontend dev dev-check backend frontend test-smoke test selfhosted-backend-api-url selfhosted-backend-config selfhosted-backend-up selfhosted-backend-down selfhosted-backend-logs selfhosted-backend-ps selfhosted-backend-backup selfhosted-backend-restore clean
+.PHONY: help install install-backend install-frontend dev dev-check backend frontend test-smoke test selfhosted-backend-init-env selfhosted-backend-doctor selfhosted-backend-api-url selfhosted-backend-config selfhosted-backend-up selfhosted-backend-health selfhosted-backend-wait-healthy selfhosted-backend-down selfhosted-backend-logs selfhosted-backend-ps selfhosted-backend-backup selfhosted-backend-restore vercel-frontend-status vercel-frontend-doctor vercel-frontend-link vercel-frontend-whoami vercel-frontend-sync-api-url vercel-frontend-sync-api-url-preview vercel-frontend-deploy vercel-frontend-deploy-preview deploy-selfhosted-app-status deploy-selfhosted-app clean
 
 help:
 	@echo "RL Gym Visualizer - Development Commands"
@@ -23,14 +23,25 @@ help:
 	@echo "  make frontend   Start only the frontend server"
 	@echo "  make test-smoke Run minimal backend smoke test (CI; requires backend up)"
 	@echo "  make test       Run full backend test (requires backend up)"
+	@echo "  make selfhosted-backend-init-env Create deploy/selfhosted/backend.env"
+	@echo "  make selfhosted-backend-doctor   Validate backend deploy prerequisites"
 	@echo "  make selfhosted-backend-api-url Print the NEXT_PUBLIC_API_URL value for Vercel"
 	@echo "  make selfhosted-backend-config Validate self-hosted backend Compose config"
 	@echo "  make selfhosted-backend-up     Build and start the self-hosted backend stack"
+	@echo "  make selfhosted-backend-health Query the public backend health endpoint"
+	@echo "  make selfhosted-backend-wait-healthy Wait until the public backend is healthy"
 	@echo "  make selfhosted-backend-down   Stop the self-hosted backend stack"
 	@echo "  make selfhosted-backend-logs   Follow self-hosted backend logs"
 	@echo "  make selfhosted-backend-ps     Show self-hosted backend service status"
 	@echo "  make selfhosted-backend-backup Export the self-hosted backend data volume"
 	@echo "  make selfhosted-backend-restore BACKUP=/abs/path.tar.gz Restore the self-hosted data volume"
+	@echo "  make vercel-frontend-status    Show Vercel auth/link status and computed API URL"
+	@echo "  make vercel-frontend-link      Link frontend/ to a Vercel project"
+	@echo "  make vercel-frontend-doctor    Validate Vercel CLI auth and linkage"
+	@echo "  make vercel-frontend-sync-api-url Sync NEXT_PUBLIC_API_URL to Vercel production"
+	@echo "  make vercel-frontend-deploy    Deploy frontend/ to Vercel production"
+	@echo "  make deploy-selfhosted-app-status Show end-to-end deployment readiness"
+	@echo "  make deploy-selfhosted-app     Deploy backend + production frontend"
 	@echo "  make clean      Remove generated files and caches"
 	@echo ""
 	@echo "Common overrides:"
@@ -86,6 +97,12 @@ test:
 	@echo "Running full backend test..."
 	@bash test-comprehensive.sh
 
+selfhosted-backend-init-env:
+	@bash scripts/selfhosted-backend.sh init-env
+
+selfhosted-backend-doctor:
+	@bash scripts/selfhosted-backend.sh doctor
+
 selfhosted-backend-api-url:
 	@bash scripts/selfhosted-backend.sh api-url
 
@@ -94,6 +111,12 @@ selfhosted-backend-config:
 
 selfhosted-backend-up:
 	@bash scripts/selfhosted-backend.sh up
+
+selfhosted-backend-health:
+	@bash scripts/selfhosted-backend.sh health
+
+selfhosted-backend-wait-healthy:
+	@bash scripts/selfhosted-backend.sh wait-healthy
 
 selfhosted-backend-down:
 	@bash scripts/selfhosted-backend.sh down
@@ -113,6 +136,36 @@ selfhosted-backend-restore:
 		exit 1; \
 	fi
 	@bash scripts/selfhosted-backend.sh restore "$(BACKUP)"
+
+vercel-frontend-status:
+	@bash scripts/vercel-frontend.sh status
+
+vercel-frontend-doctor:
+	@bash scripts/vercel-frontend.sh doctor
+
+vercel-frontend-link:
+	@bash scripts/vercel-frontend.sh link
+
+vercel-frontend-whoami:
+	@bash scripts/vercel-frontend.sh whoami
+
+vercel-frontend-sync-api-url:
+	@bash scripts/vercel-frontend.sh set-api-url production
+
+vercel-frontend-sync-api-url-preview:
+	@bash scripts/vercel-frontend.sh set-api-url preview
+
+vercel-frontend-deploy:
+	@bash scripts/vercel-frontend.sh deploy production
+
+vercel-frontend-deploy-preview:
+	@bash scripts/vercel-frontend.sh deploy preview
+
+deploy-selfhosted-app:
+	@bash scripts/deploy-selfhosted-app.sh all
+
+deploy-selfhosted-app-status:
+	@bash scripts/deploy-selfhosted-app.sh status
 
 # Cleanup
 clean:

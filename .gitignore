@@ -47,6 +47,8 @@ frontend/out/
 # IDE
 .vscode/
 .idea/
+.vercel/
+frontend/.vercel/
 *.swp
 *.swo
 *~
@@ -68,3 +70,4 @@ runs/
 *.db
 *.sqlite
 *.mp4
+.vercel

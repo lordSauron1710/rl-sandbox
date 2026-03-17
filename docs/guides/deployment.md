@@ -14,7 +14,9 @@ The repo fills the app-side deployment gap with:
 - `deploy/selfhosted/docker-compose.yml`: backend + reverse proxy stack
 - `deploy/selfhosted/Caddyfile`: HTTPS reverse proxy for the backend
 - `deploy/selfhosted/backend.env.example`: production env template
-- `scripts/selfhosted-backend.sh`: wrapper for `docker compose`, Vercel API URL output, and `/data` backup/restore
+- `scripts/selfhosted-backend.sh`: wrapper for env bootstrap, `docker compose`, API URL output, and `/data` backup/restore
+- `scripts/vercel-frontend.sh`: wrapper for Vercel project linkage, env sync, and deploys from `frontend/`
+- `scripts/deploy-selfhosted-app.sh`: one-command backend + production frontend deploy wrapper with health wait
 - `make selfhosted-backend-*`: convenience commands
 
 The repo cannot automate these external prerequisites for you:
@@ -51,33 +53,36 @@ Notes:
 ```bash
 git clone https://github.com/lordSauron1710/rl-sandbox.git
 cd rl-sandbox
-cp deploy/selfhosted/backend.env.example deploy/selfhosted/backend.env
+make selfhosted-backend-init-env \
+  API_DOMAIN=api.example.com \
+  FRONTEND_URL=https://your-project.vercel.app
 ```
 
-### B) Edit `deploy/selfhosted/backend.env`
+This creates `deploy/selfhosted/backend.env`, derives `CORS_ORIGINS` and
+`TRUSTED_HOSTS` from the two hostnames above.
+
+### B) Review `deploy/selfhosted/backend.env`
 
 Minimum values:
 
 - `API_DOMAIN`: public hostname for the backend
-- `RLV_ACCESS_TOKEN`: long random token used to unlock the backend from the frontend
 - `FRONTEND_URL`: Vercel production frontend URL
 - `CORS_ORIGINS`: same Vercel production frontend URL
 - `TRUSTED_HOSTS`: backend hostname
 
 Optional:
 
+- `RLV_ACCESS_TOKEN`: set a long random token if you want an unlock screen before the app loads
 - `CORS_ORIGIN_REGEX=https://.*\\.vercel\\.app` if you want Vercel preview deployments to work too
 
-### C) Validate and start the backend stack
+### C) Validate backend prerequisites
 
 ```bash
-make selfhosted-backend-api-url
-make selfhosted-backend-config
-make selfhosted-backend-up
-make selfhosted-backend-ps
+make deploy-selfhosted-app-status
+make selfhosted-backend-doctor
 ```
 
-Or without `make`:
+If the doctor passes, you can still run the backend steps manually:
 
 ```bash
 bash scripts/selfhosted-backend.sh api-url
@@ -86,14 +91,32 @@ bash scripts/selfhosted-backend.sh up
 bash scripts/selfhosted-backend.sh ps
 ```
 
+### D) Link the Vercel project once
+
+```bash
+make vercel-frontend-link
+```
+
+This requires either an existing `vercel login` session or `VERCEL_TOKEN`.
+For non-interactive linking, set `VERCEL_PROJECT`, and optionally `VERCEL_SCOPE`.
+
+### E) Deploy backend + production frontend
+
+```bash
+make deploy-selfhosted-app
+```
+
 The stack does this:
 
 - builds the FastAPI backend from `backend/Dockerfile`
 - stores SQLite + run artifacts in a Docker volume mounted at `/data`
 - terminates HTTPS with Caddy
 - exposes only Caddy on ports `80` and `443`
+- waits for the public backend health endpoint before releasing the frontend
+- syncs `NEXT_PUBLIC_API_URL` to the linked Vercel project
+- runs a production frontend deploy from `frontend/`
 
-### D) Verify the backend
+### F) Verify the backend
 
 ```bash
 curl https://<your-api-domain>/health
@@ -101,9 +124,10 @@ curl https://<your-api-domain>/health
 
 Expected result: a JSON payload with `"status": "healthy"`.
 
-### E) Point Vercel at the backend
+### G) Optional manual Vercel steps
 
-In the Vercel project for `frontend/`, set the value printed by:
+If you do not want the Vercel helper script to manage the frontend, you can
+still set the value printed by:
 
 ```bash
 make selfhosted-backend-api-url
@@ -111,13 +135,15 @@ make selfhosted-backend-api-url
 
 Then redeploy the frontend.
 
-### F) Unlock the backend from the deployed frontend
+### H) Open the deployed frontend
 
-Open the Vercel frontend. On first use against the protected backend, the app
-will prompt for the `RLV_ACCESS_TOKEN` value from `deploy/selfhosted/backend.env`
-and exchange it for an HttpOnly session cookie on the backend domain.
+Open the Vercel frontend.
 
-### G) Day-2 operations
+- If `RLV_ACCESS_TOKEN` is set, the app will prompt once for it and exchange it
+  for an HttpOnly session cookie on the backend domain.
+- If `RLV_ACCESS_TOKEN` is blank, the app will load directly.
+
+### I) Day-2 operations
 
 ```bash
 make selfhosted-backend-logs
@@ -142,7 +168,7 @@ File: `deploy/selfhosted/backend.env`
 | `API_DOMAIN` | Yes | `api.example.com` |
 | `APP_ENV` | Yes | `production` |
 | `ENABLE_API_DOCS` | No | `false` |
-| `RLV_ACCESS_TOKEN` | Yes | `long-random-secret` |
+| `RLV_ACCESS_TOKEN` | No | `long-random-secret` |
 | `FRONTEND_URL` | Yes | `https://your-project.vercel.app` |
 | `CORS_ORIGINS` | Yes | `https://your-project.vercel.app` |
 | `CORS_ORIGIN_REGEX` | No | `https://.*\\.vercel\\.app` |
@@ -153,6 +179,17 @@ File: `deploy/selfhosted/backend.env`
 | Variable | Required | Example |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | Yes | `https://api.example.com/api/v1` |
+
+### Helper-only variables
+
+| Variable | Required | Example |
+|---|---|---|
+| `VERCEL_TOKEN` | No | `vercel_xxxxx` |
+| `VERCEL_PROJECT` | No | `your-project-name` |
+| `VERCEL_SCOPE` | No | `your-team-or-username` |
+| `VERCEL_DEPLOY_HOOK_URL` | No | `https://api.vercel.com/v1/integrations/deploy/...` |
+| `VERCEL_PROJECT_DIR` | No | `/absolute/path/to/repo` |
+| `SELFHOSTED_ENV_FILE` | No | `deploy/selfhosted/backend.env` |
 
 ## 4) Common issues
 
@@ -167,6 +204,15 @@ File: `deploy/selfhosted/backend.env`
 - Frontend prompts for a token repeatedly:
   - Verify `RLV_ACCESS_TOKEN` in `deploy/selfhosted/backend.env`.
   - Confirm the backend is running over HTTPS so the secure session cookie can be set.
+- Frontend should load directly but still shows the unlock screen:
+  - Clear `RLV_ACCESS_TOKEN` in `deploy/selfhosted/backend.env`.
+  - Recreate the backend container after changing the env file.
+- Vercel helper fails:
+  - Run `make vercel-frontend-status`.
+  - Run `make vercel-frontend-doctor`.
+  - Link the project with `make vercel-frontend-link`.
+  - Export `VERCEL_TOKEN` if you need non-interactive CLI auth.
+  - Set `VERCEL_PROJECT` for non-interactive linking, or `VERCEL_DEPLOY_HOOK_URL` if you only need a redeploy fallback.
 - Health check fails:
   - Inspect container logs with `make selfhosted-backend-logs`.
   - Verify the backend machine can build the image and start the FastAPI container.
@@ -178,5 +224,5 @@ File: `deploy/selfhosted/backend.env`
 - Never commit `deploy/selfhosted/backend.env`.
 - Keep the backend public origin allowlist tight.
 - Keep API docs disabled in public production unless you have a private/admin-only deployment.
-- Set a strong `RLV_ACCESS_TOKEN` before exposing the backend to the internet.
+- If you expose the backend publicly with no token, anyone who can reach the API can trigger training and evaluation workloads.
 - Back up the persistent `/data` volume before host rebuilds or volume maintenance.

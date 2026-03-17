@@ -25,7 +25,9 @@ The current repo baseline has since been normalized to:
   - production env wiring (`RLV_DB_PATH`, `RLV_RUNS_DIR`, CORS, trusted hosts, deployment access token)
 - `deploy/selfhosted/Caddyfile` for automatic HTTPS reverse proxying.
 - `deploy/selfhosted/backend.env.example` for production backend config.
-- `scripts/selfhosted-backend.sh` and matching `make selfhosted-backend-*` commands for config, API URL output, backup, and restore.
+- `scripts/selfhosted-backend.sh` and matching `make selfhosted-backend-*` commands for env bootstrap, config, API URL output, doctor checks, backup, and restore.
+- `scripts/vercel-frontend.sh` for Vercel linkage, env sync, and deploys.
+- `scripts/deploy-selfhosted-app.sh` for the combined backend + production frontend flow.
 - `backend/app/auth.py` + `backend/app/routers/auth.py` for optional deployment access control.
 - `frontend/vercel.json` with security/cache headers.
 - `backend/app/db/database.py` now supports `RLV_DB_PATH`.

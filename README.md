@@ -144,14 +144,20 @@ backend on your own machine with the included Compose stack and keep the
 frontend on Vercel.
 
 ```bash
-cp deploy/selfhosted/backend.env.example deploy/selfhosted/backend.env
-make selfhosted-backend-api-url
-make selfhosted-backend-config
-make selfhosted-backend-up
+make selfhosted-backend-init-env API_DOMAIN=api.example.com FRONTEND_URL=https://your-project.vercel.app
+make deploy-selfhosted-app-status
+make selfhosted-backend-doctor
+make vercel-frontend-link
+make deploy-selfhosted-app
 ```
 
-Set the printed `NEXT_PUBLIC_API_URL` value in Vercel, redeploy the frontend,
-then open the app and enter the `RLV_ACCESS_TOKEN` value once when prompted.
+If the repo is already linked to Vercel, you can skip `make vercel-frontend-link`.
+For non-interactive Vercel automation, export `VERCEL_TOKEN`, and optionally
+`VERCEL_PROJECT` / `VERCEL_SCOPE`. If CLI auth is unavailable but the frontend
+env is already correct, `VERCEL_DEPLOY_HOOK_URL` can trigger the production
+redeploy fallback.
+If `RLV_ACCESS_TOKEN` is set on the backend, the deployed app will prompt once
+for it. If you leave `RLV_ACCESS_TOKEN` blank, the app loads directly.
 See `docs/guides/deployment.md` for router, HTTPS, and hostname setup.
 
 ## Test commands
@@ -183,7 +189,11 @@ make test
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | Frontend | `http://127.0.0.1:8000/api/v1` | API base URL used by frontend |
 | `API_DOMAIN` | Self-hosted deploy | unset | Public hostname used by Caddy for HTTPS backend |
-| `RLV_ACCESS_TOKEN` | Self-hosted deploy | unset | Required backend access token for public Vercel-to-backend use |
+| `RLV_ACCESS_TOKEN` | Self-hosted deploy | unset | Optional backend access token; when unset the app opens directly with no unlock screen |
+| `VERCEL_TOKEN` | Deploy helper | unset | Optional Vercel CLI auth token for deployment scripts |
+| `VERCEL_PROJECT` | Deploy helper | unset | Optional Vercel project name/id for non-interactive linking |
+| `VERCEL_SCOPE` | Deploy helper | unset | Optional Vercel team/account scope for helper scripts |
+| `VERCEL_DEPLOY_HOOK_URL` | Deploy helper | unset | Optional production deploy hook fallback |
 | `APP_ENV` | Backend | `development` | Set to `production` for deployed backend hardening |
 | `RLV_RUNS_DIR` | Backend | `backend/runs` | Artifact storage root |
 | `RLV_DB_PATH` | Backend | `backend/data/rl_visualizer.db` | SQLite database path |
@@ -204,6 +214,8 @@ make test
 - `deploy/selfhosted/Caddyfile`: HTTPS reverse proxy config for self-hosted backend
 - `deploy/selfhosted/backend.env.example`: production env template for the self-hosted backend
 - `scripts/selfhosted-backend.sh`: wrapper for starting, validating, backing up, and restoring the self-hosted backend stack
+- `scripts/vercel-frontend.sh`: helper for linking `frontend/`, syncing `NEXT_PUBLIC_API_URL`, and deploying to Vercel
+- `scripts/deploy-selfhosted-app.sh`: wrapper that deploys the backend stack, waits for health, and releases the production frontend
 - `docs/policies/POLICY_INDEX.md`: entrypoint for repo security and deployment policies
 - `docs/policies/SECURITY.md`: repo-wide security baseline
 - `docs/policies/API.md`: rules for network-facing handlers and streaming endpoints

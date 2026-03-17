@@ -4,6 +4,10 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'RL SANDBOX // GYM LAB',
   description: 'Train and visualize reinforcement learning agents',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({

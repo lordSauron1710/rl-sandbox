@@ -16,7 +16,6 @@
 ## Required Production Backend Settings
 
 - `APP_ENV=production`
-- `RLV_ACCESS_TOKEN`
 - `CORS_ORIGINS` and/or `FRONTEND_URL`
 - `TRUSTED_HOSTS`
 - `RLV_DB_PATH`
@@ -25,8 +24,11 @@
 ## Recommended Production Posture
 
 - Keep API docs disabled in public production.
-- For the self-hosted public path, require the deployment access-token session
-  flow unless the backend is otherwise network-restricted.
-- Use the checked-in Compose + Caddy stack as the baseline deployment shape unless there is a documented reason to diverge.
+- For the self-hosted public path, use `RLV_ACCESS_TOKEN` if you want an unlock
+  screen before the app loads. Leaving it blank makes the app open directly.
+- Use the checked-in backend/Vercel helper scripts as the baseline deployment
+  automation unless there is a documented reason to diverge.
+- Frontend release automation should either use authenticated Vercel CLI access
+  or a documented deploy-hook fallback; do not leave redeploy steps implicit.
 - Keep a documented backup/restore path for the persistent `/data` volume.
 - Do not depend on marketing-page free tiers staying available; keep deployment docs provider-agnostic where possible.

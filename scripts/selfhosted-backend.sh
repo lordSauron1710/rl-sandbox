@@ -12,9 +12,14 @@ usage() {
 Usage: scripts/selfhosted-backend.sh <command>
 
 Commands:
+  init-env Create deploy/selfhosted/backend.env from defaults/placeholders
+  doctor   Validate local prerequisites and required backend env values
   api-url  Print the NEXT_PUBLIC_API_URL value to set in Vercel
   config   Render the resolved Docker Compose config
   up       Build and start the self-hosted backend stack
+  health   Query the public backend health endpoint
+  wait-healthy
+           Poll the public backend health endpoint until it is healthy
   down     Stop the self-hosted backend stack
   logs     Follow logs for the self-hosted backend stack
   ps       Show service status
@@ -23,6 +28,7 @@ Commands:
 
 Environment:
   SELFHOSTED_ENV_FILE  Optional override for the env file path
+  SELFHOSTED_HEALTH_TIMEOUT_SECONDS  Optional wait-healthy timeout (default: 180)
 
 First run:
   cp deploy/selfhosted/backend.env.example deploy/selfhosted/backend.env
@@ -33,6 +39,14 @@ EOF
 die() {
   printf '[selfhosted][error] %s\n' "$*" >&2
   exit 1
+}
+
+warn() {
+  printf '[selfhosted][warn] %s\n' "$*" >&2
+}
+
+info() {
+  printf '[selfhosted] %s\n' "$*"
 }
 
 require_cmd() {
@@ -64,10 +78,135 @@ resolve_path() {
   fi
 }
 
+init_env() {
+  local force="${1:-}"
+
+  if [ -f "$ENV_FILE" ] && [ "$force" != "--force" ]; then
+    die "Env file already exists: $ENV_FILE (use init-env --force to overwrite)"
+  fi
+
+  local api_domain="${API_DOMAIN:-api.example.com}"
+  local frontend_url="${FRONTEND_URL:-https://your-project.vercel.app}"
+  local cors_origins="${CORS_ORIGINS:-$frontend_url}"
+  local cors_origin_regex="${CORS_ORIGIN_REGEX:-}"
+  local trusted_hosts="${TRUSTED_HOSTS:-$api_domain}"
+  local access_token="${RLV_ACCESS_TOKEN:-}"
+
+  mkdir -p "$(dirname "$ENV_FILE")"
+  cat >"$ENV_FILE" <<EOF
+# Public HTTPS hostname for the backend.
+API_DOMAIN=$api_domain
+
+# Production backend mode.
+APP_ENV=production
+ENABLE_API_DOCS=false
+
+# Optional deployment access token for the hosted frontend.
+# Leave blank to disable the unlock screen and load the app directly.
+RLV_ACCESS_TOKEN=$access_token
+
+# Vercel frontend origin allowed to call the backend.
+FRONTEND_URL=$frontend_url
+CORS_ORIGINS=$cors_origins
+
+# Optional preview support. Leave blank if you only want the production Vercel URL.
+CORS_ORIGIN_REGEX=$cors_origin_regex
+
+# Host allowlist for public HTTP traffic.
+TRUSTED_HOSTS=$trusted_hosts
+EOF
+
+  info "Wrote $ENV_FILE"
+  if [ "$api_domain" = "api.example.com" ] || [ "$frontend_url" = "https://your-project.vercel.app" ]; then
+    warn "backend.env still contains placeholder hostnames; update API_DOMAIN/FRONTEND_URL before deploy"
+  fi
+}
+
+doctor() {
+  local errors=0
+
+  require_env_file
+  require_cmd docker
+  require_compose
+  load_env_file
+
+  [ "${APP_ENV:-}" = "production" ] || {
+    warn "APP_ENV should be 'production' for the self-hosted deployment"
+    errors=$((errors + 1))
+  }
+
+  [ -n "${API_DOMAIN:-}" ] || {
+    warn "API_DOMAIN is required"
+    errors=$((errors + 1))
+  }
+  [ "${API_DOMAIN:-}" != "api.example.com" ] || {
+    warn "API_DOMAIN still uses the example placeholder"
+    errors=$((errors + 1))
+  }
+  [[ "${API_DOMAIN:-}" != *"://"* ]] || {
+    warn "API_DOMAIN should be a hostname only, without http:// or https://"
+    errors=$((errors + 1))
+  }
+
+  [ -n "${FRONTEND_URL:-}" ] || {
+    warn "FRONTEND_URL is required"
+    errors=$((errors + 1))
+  }
+  [ "${FRONTEND_URL:-}" != "https://your-project.vercel.app" ] || {
+    warn "FRONTEND_URL still uses the example placeholder"
+    errors=$((errors + 1))
+  }
+  [[ "${FRONTEND_URL:-}" == https://* ]] || {
+    warn "FRONTEND_URL should use https:// for the hosted frontend"
+    errors=$((errors + 1))
+  }
+
+  [ -n "${CORS_ORIGINS:-}" ] || {
+    warn "CORS_ORIGINS is required"
+    errors=$((errors + 1))
+  }
+  [[ "${CORS_ORIGINS:-}" == *"${FRONTEND_URL:-}"* ]] || {
+    warn "CORS_ORIGINS should include FRONTEND_URL"
+    errors=$((errors + 1))
+  }
+
+  [ -n "${TRUSTED_HOSTS:-}" ] || {
+    warn "TRUSTED_HOSTS is required"
+    errors=$((errors + 1))
+  }
+  [[ "${TRUSTED_HOSTS:-}" == *"${API_DOMAIN:-}"* ]] || {
+    warn "TRUSTED_HOSTS should include API_DOMAIN"
+    errors=$((errors + 1))
+  }
+
+  if [ -z "${RLV_ACCESS_TOKEN:-}" ]; then
+    warn "RLV_ACCESS_TOKEN is unset; the backend will be directly usable from allowed origins without an unlock screen"
+  fi
+  if [ -n "${RLV_ACCESS_TOKEN:-}" ] && [ "${#RLV_ACCESS_TOKEN}" -lt 24 ]; then
+    warn "RLV_ACCESS_TOKEN is short; use a longer random value"
+  fi
+
+  if [ "${ENABLE_API_DOCS:-false}" = "true" ]; then
+    warn "ENABLE_API_DOCS=true exposes interactive docs in production"
+  fi
+
+  if [ "$errors" -gt 0 ]; then
+    die "Doctor found $errors blocking issue(s)"
+  fi
+
+  info "Doctor checks passed for $ENV_FILE"
+}
+
 print_api_url() {
   load_env_file
   [ -n "${API_DOMAIN:-}" ] || die "API_DOMAIN is missing from $ENV_FILE"
   printf 'NEXT_PUBLIC_API_URL=https://%s/api/v1\n' "$API_DOMAIN"
+}
+
+get_health_url() {
+  load_env_file
+  [ -n "${API_DOMAIN:-}" ] || die "API_DOMAIN is missing from $ENV_FILE"
+  printf 'https://%s/health\n' "$API_DOMAIN"
 }
 
 compose() {
@@ -78,43 +217,77 @@ main() {
   local command="${1:-}"
   local archive_path=""
   local archive_name=""
+  local timeout_seconds=""
+  local deadline=""
+  local health_url=""
   [ -n "$command" ] || {
     usage
     exit 1
   }
 
-  require_env_file
-
   case "$command" in
+    init-env)
+      init_env "${2:-}"
+      ;;
+    doctor)
+      doctor
+      ;;
     api-url)
+      require_env_file
       print_api_url
       ;;
     config)
+      require_env_file
       require_cmd docker
       require_compose
       compose config
       ;;
     up)
+      require_env_file
       require_cmd docker
       require_compose
       compose up -d --build
       ;;
+    health)
+      require_env_file
+      require_cmd curl
+      curl -fsS "$(get_health_url)"
+      ;;
+    wait-healthy)
+      require_env_file
+      require_cmd curl
+      timeout_seconds="${SELFHOSTED_HEALTH_TIMEOUT_SECONDS:-180}"
+      deadline=$((SECONDS + timeout_seconds))
+      health_url="$(get_health_url)"
+      while (( SECONDS < deadline )); do
+        if curl -fsS "$health_url" >/dev/null 2>&1; then
+          info "Backend is healthy at $health_url"
+          exit 0
+        fi
+        sleep 3
+      done
+      die "Timed out waiting for backend health at $health_url"
+      ;;
     down)
+      require_env_file
       require_cmd docker
       require_compose
       compose down
       ;;
     logs)
+      require_env_file
       require_cmd docker
       require_compose
       compose logs -f --tail=200
       ;;
     ps)
+      require_env_file
       require_cmd docker
       require_compose
       compose ps
       ;;
     backup)
+      require_env_file
       require_cmd docker
       require_compose
       archive_path="$(resolve_path "${2:-$ROOT_DIR/tmp/selfhosted-backups/rl-sandbox-$(date +%Y%m%d-%H%M%S).tar.gz}")"
@@ -125,6 +298,7 @@ main() {
       printf '[selfhosted] Backup written to %s\n' "$archive_path"
       ;;
     restore)
+      require_env_file
       require_cmd docker
       require_compose
       archive_path="${2:-}"

@@ -11,7 +11,11 @@
 
 - `APP_ENV`: backend runtime mode (`development` or `production`)
 - `NEXT_PUBLIC_API_URL`: browser-safe backend API base URL
-- `RLV_ACCESS_TOKEN`: deployment access secret for the self-hosted backend
+- `RLV_ACCESS_TOKEN`: optional deployment access secret for the self-hosted backend
+- `VERCEL_TOKEN`: optional Vercel CLI auth token for deployment helper scripts
+- `VERCEL_PROJECT`: optional Vercel project name/id for non-interactive linking
+- `VERCEL_SCOPE`: optional Vercel team/account scope for deployment helper scripts
+- `VERCEL_DEPLOY_HOOK_URL`: optional Vercel production deploy hook fallback
 - `CORS_ORIGINS`: explicit browser origins allowed to call the backend
 - `FRONTEND_URL`: optional single frontend origin appended to allowed origins
 - `CORS_ORIGIN_REGEX`: optional regex for preview origins
